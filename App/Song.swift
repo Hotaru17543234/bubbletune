@@ -23,6 +23,15 @@ struct Song: Identifiable, Codable, Hashable {
     /// 自定义封面的文件名，放在 Application Support/Covers 里
     var customArtworkFile: String?
 
+    // 从 Telegram 频道同步来的歌：记住来自哪个频道的哪条消息
+    var tgChatID: Int64?
+    var tgMessageID: Int64?
+
+    var telegramKey: String? {
+        guard let tgChatID, let tgMessageID else { return nil }
+        return "\(tgChatID):\(tgMessageID)"
+    }
+
     var url: URL {
         Storage.documents.appendingPathComponent(fileName)
     }

@@ -3,6 +3,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var player: Player
+    @EnvironmentObject private var telegram: TelegramSync
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var search = ""
@@ -27,12 +28,16 @@ struct RootView: View {
             ZStack {
                 BubbleBackground()
                 if library.songs.isEmpty {
-                    emptyState
+                    VStack(spacing: 0) {
+                        syncBanner
+                        emptyState
+                    }
                 } else {
                     VStack(spacing: 0) {
                         SearchField(text: $search)
                             .padding(.horizontal, 20)
                             .padding(.top, 4)
+                        syncBanner
                         songList
                     }
                 }
@@ -46,6 +51,15 @@ struct RootView: View {
                     .accessibilityLabel("设置")
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    if telegram.isReadyToSync {
+                        Button {
+                            Task { await telegram.sync(manual: true) }
+                        } label: {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                        }
+                        .disabled(telegram.isSyncing)
+                        .accessibilityLabel("从 Telegram 同步")
+                    }
                     if !library.songs.isEmpty {
                         EditButton()
                     }
@@ -108,6 +122,7 @@ struct RootView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(library)
+                .environmentObject(telegram)
         }
         .fullScreenCover(isPresented: $showShower) {
             ShowerModeView()
@@ -118,11 +133,28 @@ struct RootView: View {
             switch phase {
             case .active:
                 library.scanDocuments()
+                telegram.appBecameActive()
             case .background:
                 player.saveState()
             default:
                 break
             }
+        }
+    }
+
+    // MARK: - Telegram 同步状态
+
+    @ViewBuilder
+    private var syncBanner: some View {
+        if telegram.status != .idle {
+            SyncStatusRow(status: telegram.status)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .transition(.opacity)
         }
     }
 

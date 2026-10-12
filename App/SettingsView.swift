@@ -7,6 +7,7 @@ enum SettingsKeys {
 
 struct SettingsView: View {
     @EnvironmentObject private var library: Library
+    @EnvironmentObject private var telegram: TelegramSync
     @Environment(\.dismiss) private var dismiss
 
     @AppStorage(SettingsKeys.holdSeconds) private var holdSeconds: Double = 0.3
@@ -15,6 +16,28 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    NavigationLink {
+                        TelegramSetupView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "paperplane.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(Theme.blue)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Telegram 频道同步")
+                                    .foregroundStyle(Theme.ink)
+                                Text(telegramSummary)
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.ink.opacity(0.55))
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                } footer: {
+                    Text("登录你自己的 Telegram 账号，把一个频道里的音频（视频只要声音）自动同步进泡泡音。")
+                }
+
                 Section {
                     Picker("按钮怎样才算按下", selection: $holdSeconds) {
                         Text("轻点就生效").tag(0.0)
@@ -30,6 +53,7 @@ struct SettingsView: View {
 
                 Section("怎么导入歌曲") {
                     tip("plus.circle.fill", "在泡泡音里点右上角「＋」，从「文件」App 或 iCloud 云盘选歌，可以一次选很多首。")
+                    tip("paperplane.fill", "在上面开启「Telegram 频道同步」，频道里的歌会自动同步进来。")
                     tip("square.and.arrow.up", "在 Telegram、浏览器、网盘等 App 里打开歌曲文件，点「分享」→「泡泡音」。")
                     tip("folder.fill", "「文件」App →「我的 iPhone」→「泡泡音」文件夹，直接把歌拖进去或者拷进去。")
                     tip("desktopcomputer", "Windows 电脑：用「Apple 设备」App（或 iTunes），连上 iPhone →「文件」→ 泡泡音 →「添加文件」。Mac：在访达里选中 iPhone →「文件」，把歌拖到泡泡音上。")
@@ -62,6 +86,20 @@ struct SettingsView: View {
         }
         .fontDesign(.rounded)
         .tint(Theme.blue)
+    }
+
+    private var telegramSummary: String {
+        switch telegram.loginStep {
+        case .ready:
+            if let channel = telegram.channel {
+                return "已开启 · \(channel.title)"
+            }
+            return "已登录，还没选频道"
+        case .needsCredentials:
+            return "还没设置"
+        default:
+            return "还没登录完"
+        }
     }
 
     private func tip(_ icon: String, _ text: String) -> some View {

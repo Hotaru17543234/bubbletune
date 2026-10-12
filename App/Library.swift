@@ -19,6 +19,9 @@ final class Library: ObservableObject {
     var onSongsChanged: (@MainActor ([UUID]) -> Void)?
     /// 某首歌的信息或封面被改了（播放器要更新锁屏上的显示）
     var onSongEdited: (@MainActor (UUID) -> Void)?
+    /// 你自己删掉了歌（在泡泡音里删，或者在「文件」App 里删掉文件）。
+    /// Telegram 同步用它记住「这首别再同步回来」
+    var onSongsDeleted: (@MainActor ([Song]) -> Void)?
 
     private var loadingIDs: Set<UUID> = []
     private var toastTask: Task<Void, Never>?
@@ -71,6 +74,7 @@ final class Library: ObservableObject {
         }
         if !gone.isEmpty {
             ArtworkCache.shared.forget(Set(gone.map(\.id)))
+            onSongsDeleted?(gone)
         }
         let known = Set(list.map(\.fileName))
         let newOnes = found
@@ -235,13 +239,67 @@ final class Library: ObservableObject {
 
     // MARK: - 删除 / 排序
 
-    func delete(ids: Set<UUID>) {
+    /// byUser = false 表示是 Telegram 同步删的（频道里的消息被删了），不用记成「别再同步」
+    func delete(ids: Set<UUID>, byUser: Bool = true) {
+        let removed = songs.filter { ids.contains($0.id) }
         for song in songs where ids.contains(song.id) {
             try? FileManager.default.removeItem(at: song.url)
             if let file = song.customArtworkFile { Self.deleteCover(file) }
         }
         songs.removeAll { ids.contains($0.id) }
         ArtworkCache.shared.forget(ids)
+        save()
+        if byUser && !removed.isEmpty {
+            onSongsDeleted?(removed)
+        }
+    }
+
+    // MARK: - Telegram 同步用
+
+    /// 同步下载好一首歌（文件已经放进文稿文件夹）后登记到列表里，按频道发布顺序插入
+    func addSyncedSong(fileName: String, chatID: Int64, messageID: Int64) {
+        // 扫描文件夹时可能已经先把这个文件加进来了，那就只补上来源
+        if let i = songs.firstIndex(where: { $0.fileName == fileName }) {
+            var linked = songs[i]
+            linked.tgChatID = chatID
+            linked.tgMessageID = messageID
+            songs[i] = linked
+            save()
+            return
+        }
+        let guess = Song.guess(fromFileName: fileName)
+        let newSong = Song(id: UUID(), fileName: fileName, title: guess.title, artist: guess.artist,
+                           album: "", duration: 0, addedAt: Date(), metadataLoaded: false,
+                           tgChatID: chatID, tgMessageID: messageID)
+        // 放在同一个频道里第一首「比它晚发」的歌前面；没有就放最后
+        if let j = songs.firstIndex(where: { $0.tgChatID == chatID && ($0.tgMessageID ?? 0) > messageID }) {
+            songs.insert(newSong, at: j)
+        } else {
+            songs.append(newSong)
+        }
+        save()
+        loadMissingMetadata()
+    }
+
+    /// 找一首「以前手动导入、还没和 Telegram 关联」的同名同大小的歌
+    func unlinkedSong(matchingFileName name: String, size: Int64) -> Song? {
+        let target = name.lowercased()
+        return songs.first { song in
+            guard song.tgMessageID == nil,
+                  (song.fileName as NSString).lastPathComponent.lowercased() == target else { return false }
+            let attrs = try? FileManager.default.attributesOfItem(atPath: song.url.path)
+            let bytes = (attrs?[.size] as? NSNumber)?.int64Value ?? -1
+            return size <= 0 || bytes == size
+        }
+    }
+
+    /// 把一首已有的歌和频道里的消息关联起来（不重复下载，改过的名字和封面都保留）
+    func linkTelegram(songID: UUID, chatID: Int64, messageID: Int64) {
+        guard let i = songs.firstIndex(where: { $0.id == songID }) else { return }
+        var linked = songs[i]
+        linked.tgChatID = chatID
+        linked.tgMessageID = messageID
+        songs[i] = linked
         save()
     }
 
