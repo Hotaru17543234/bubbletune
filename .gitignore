@@ -1,0 +1,7 @@
+BubbleTune.xcodeproj/
+build/
+out/
+*.ipa
+App/Info.plist
+.DS_Store
+__pycache__/

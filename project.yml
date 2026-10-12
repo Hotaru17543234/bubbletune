@@ -1,0 +1,74 @@
+name: BubbleTune
+
+options:
+  bundleIdPrefix: com.hotaru
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+
+targets:
+  BubbleTune:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    info:
+      path: App/Info.plist
+      properties:
+        # ASCII here: SideStore sends this name to Apple when registering the App ID,
+        # and Apple rejects non-ASCII names. The home screen shows "泡泡音" from InfoPlist.strings.
+        CFBundleDisplayName: BubbleTune
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        # 锁屏、切到别的 App 时继续放歌
+        UIBackgroundModes:
+          - audio
+        # 让「文件」App 和电脑能看到泡泡音的文件夹
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        # 在别的 App 里「分享」音频时，列表里会出现泡泡音
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Audio
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.audio
+              - public.mp3
+              - public.mpeg-4-audio
+              - com.apple.m4a-audio
+              - com.microsoft.waveform-audio
+              - public.aiff-audio
+              - public.aifc-audio
+              - com.apple.coreaudio-format
+              - org.xiph.flac
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hotaru.bubbletune
+        PRODUCT_NAME: BubbleTune
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+schemes:
+  BubbleTune:
+    build:
+      targets:
+        BubbleTune: all
+    run:
+      config: Debug
+    archive:
+      config: Release

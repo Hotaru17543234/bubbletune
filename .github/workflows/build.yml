@@ -1,0 +1,90 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build app (unsigned)
+        run: |
+          xcodebuild -version > xcode-version.txt
+          brew install xcodegen > /dev/null
+          xcodegen generate > xcodegen.log 2>&1
+          xcodebuild \
+            -project BubbleTune.xcodeproj \
+            -scheme BubbleTune \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build > build.log 2>&1 || true
+          grep -E "error:|BUILD (SUCCEEDED|FAILED)" build.log | head -60 || true
+          grep -q "BUILD SUCCEEDED" build.log
+
+      - name: Package IPA
+        run: |
+          APP="build/Build/Products/Release-iphoneos/BubbleTune.app"
+          codesign --force --sign - "$APP"
+          plutil -p "$APP/Info.plist" > info-plist.txt
+          mkdir -p out/Payload
+          cp -R "$APP" out/Payload/
+          (cd out && zip -qry ../BubbleTune.ipa Payload)
+          ls -la BubbleTune.ipa
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: BubbleTune-ipa
+          path: BubbleTune.ipa
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" BubbleTune.ipa \
+            --title "泡泡音 第 ${{ github.run_number }} 版" \
+            --notes "在 iPhone 上用 Safari 下载 BubbleTune.ipa，然后用 SideStore 安装。" \
+            --latest
+
+      - name: Write build report
+        if: always()
+        run: |
+          {
+            echo "run: ${{ github.run_number }}"
+            echo "commit: ${{ github.sha }}"
+            echo "result: ${{ job.status }}"
+            cat xcode-version.txt 2>/dev/null
+            echo "---- errors ----"
+            grep -E "error:" build.log 2>/dev/null | sort -u | head -200
+            echo "---- warnings (app code) ----"
+            grep -E "/App/.*warning:" build.log 2>/dev/null | sort -u | head -80
+            echo "---- info.plist ----"
+            cat info-plist.txt 2>/dev/null
+            echo "---- xcodegen ----"
+            tail -20 xcodegen.log 2>/dev/null
+            echo "---- build log tail ----"
+            tail -80 build.log 2>/dev/null
+          } > /tmp/report.txt
+          rm -rf /tmp/rep && mkdir /tmp/rep && cd /tmp/rep
+          git init -q
+          git checkout -q -b build-report
+          cp /tmp/report.txt report.txt
+          git add report.txt
+          git -c user.name="build-bot" -c user.email="build-bot@users.noreply.github.com" commit -qm "report ${{ github.run_number }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" build-report
