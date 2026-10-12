@@ -55,7 +55,8 @@ jobs:
           mkdir -p out/Payload
           cp -R "$APP" out/Payload/
           (cd out && zip -qry ../BubbleTune.ipa Payload)
-          cp BubbleTune.ipa "$GITHUB_WORKSPACE/BubbleTune.ipa"
+          # 工程在子文件夹里时，把 ipa 挪到仓库最外层（在最外层时不用挪）
+          if [ "$(pwd)" != "$GITHUB_WORKSPACE" ]; then cp BubbleTune.ipa "$GITHUB_WORKSPACE/BubbleTune.ipa"; fi
           ls -la "$GITHUB_WORKSPACE/BubbleTune.ipa"
 
       - uses: actions/upload-artifact@v6
