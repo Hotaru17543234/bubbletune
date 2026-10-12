@@ -19,8 +19,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # 工程放在仓库根目录或者子文件夹里都可以
+      - name: Find project folder
+        run: |
+          YML=$(find . -name project.yml -not -path "./.git/*" | head -1)
+          if [ -z "$YML" ]; then echo "project.yml not found"; exit 1; fi
+          echo "PROJ=$(dirname "$YML")" >> "$GITHUB_ENV"
+
       - name: Build app (unsigned)
         run: |
+          cd "$PROJ"
           xcodebuild -version > xcode-version.txt
           brew install xcodegen > /dev/null
           xcodegen generate > xcodegen.log 2>&1
@@ -40,13 +48,15 @@ jobs:
 
       - name: Package IPA
         run: |
+          cd "$PROJ"
           APP="build/Build/Products/Release-iphoneos/BubbleTune.app"
           codesign --force --sign - "$APP"
           plutil -p "$APP/Info.plist" > info-plist.txt
           mkdir -p out/Payload
           cp -R "$APP" out/Payload/
           (cd out && zip -qry ../BubbleTune.ipa Payload)
-          ls -la BubbleTune.ipa
+          cp BubbleTune.ipa "$GITHUB_WORKSPACE/BubbleTune.ipa"
+          ls -la "$GITHUB_WORKSPACE/BubbleTune.ipa"
 
       - uses: actions/upload-artifact@v6
         with:
@@ -65,10 +75,12 @@ jobs:
       - name: Write build report
         if: always()
         run: |
+          cd "${PROJ:-.}"
           {
             echo "run: ${{ github.run_number }}"
             echo "commit: ${{ github.sha }}"
             echo "result: ${{ job.status }}"
+            echo "project folder: ${PROJ}"
             cat xcode-version.txt 2>/dev/null
             echo "---- errors ----"
             grep -E "error:" build.log 2>/dev/null | sort -u | head -200
