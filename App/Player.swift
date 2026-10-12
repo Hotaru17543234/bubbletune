@@ -61,6 +61,9 @@ final class Player: NSObject, ObservableObject {
         library.onSongsChanged = { [weak self] ids in
             self?.librarySongsChanged(ids)
         }
+        library.onSongEdited = { [weak self] id in
+            self?.songEdited(id)
+        }
 
         // 每 5 秒记一下放到哪了，app 被系统关掉也不怕
         autosaveTask = Task { [weak self] in
@@ -197,7 +200,7 @@ final class Player: NSObject, ObservableObject {
         } catch {
             isPlaying = false
             updateNowPlaying()
-            library.showToast("「\(song.title)」放不了，可能格式不支持或文件坏了")
+            library.showToast("「\(song.displayTitle)」放不了，可能格式不支持或文件坏了")
             // 自动跳过坏掉的歌，但全都坏了就别一直转圈
             if autoplay {
                 brokenInARow += 1
@@ -246,6 +249,15 @@ final class Player: NSObject, ObservableObject {
             // 正在放的歌被删掉了
             stopAndClear()
         }
+    }
+
+    /// 正在放的歌改了名字或封面：锁屏和控制中心也跟着更新
+    private func songEdited(_ id: UUID) {
+        guard id == currentID, let song = currentSong else { return }
+        objectWillChange.send()   // 底部播放条、播放页、洗澡模式里的歌名跟着刷新
+        nowPlayingArtwork = nil
+        updateNowPlaying()
+        loadArtwork(for: song)
     }
 
     func saveState() {
@@ -348,14 +360,14 @@ final class Player: NSObject, ObservableObject {
             return
         }
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: song.title,
+            MPMediaItemPropertyTitle: song.displayTitle,
             MPMediaItemPropertyArtist: song.displayArtist,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
         ]
-        if !song.album.isEmpty {
-            info[MPMediaItemPropertyAlbumTitle] = song.album
+        if !song.displayAlbum.isEmpty {
+            info[MPMediaItemPropertyAlbumTitle] = song.displayAlbum
         }
         if let art = nowPlayingArtwork {
             info[MPMediaItemPropertyArtwork] = art

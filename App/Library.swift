@@ -17,6 +17,8 @@ final class Library: ObservableObject {
 
     /// 歌曲增减或顺序改变时通知播放器
     var onSongsChanged: (@MainActor ([UUID]) -> Void)?
+    /// 某首歌的信息或封面被改了（播放器要更新锁屏上的显示）
+    var onSongEdited: (@MainActor (UUID) -> Void)?
 
     private var loadingIDs: Set<UUID> = []
     private var toastTask: Task<Void, Never>?
@@ -63,6 +65,13 @@ final class Library: ObservableObject {
         }
         let foundSet = Set(found)
         var list = songs.filter { foundSet.contains($0.fileName) }
+        let gone = songs.filter { !foundSet.contains($0.fileName) }
+        for song in gone {
+            if let file = song.customArtworkFile { Self.deleteCover(file) }
+        }
+        if !gone.isEmpty {
+            ArtworkCache.shared.forget(Set(gone.map(\.id)))
+        }
         let known = Set(list.map(\.fileName))
         let newOnes = found
             .filter { !known.contains($0) }
@@ -111,6 +120,8 @@ final class Library: ObservableObject {
         song.metadataLoaded = true
         songs[i] = song
         save()
+        // 刚导入就在放的歌：读到真正的歌名后，锁屏上也换掉文件名
+        onSongEdited?(id)
     }
 
     // MARK: - 导入
@@ -227,6 +238,7 @@ final class Library: ObservableObject {
     func delete(ids: Set<UUID>) {
         for song in songs where ids.contains(song.id) {
             try? FileManager.default.removeItem(at: song.url)
+            if let file = song.customArtworkFile { Self.deleteCover(file) }
         }
         songs.removeAll { ids.contains($0.id) }
         ArtworkCache.shared.forget(ids)
@@ -238,6 +250,72 @@ final class Library: ObservableObject {
         list.move(fromOffsets: offsets, toOffset: destination)
         songs = list
         save()
+    }
+
+    // MARK: - 编辑歌曲信息（只在泡泡音里生效，不改音乐文件）
+
+    enum CoverChange: Sendable {
+        case keep              // 封面不动
+        case remove            // 去掉自定义封面，用回音乐文件自带的
+        case replace(Data)     // 换成新封面（已经裁好的正方形 JPEG）
+    }
+
+    /// 保存编辑页里的修改。文字和原来一样、或者留空，就当作没改
+    func updateSong(_ id: UUID, title: String, artist: String, album: String, cover: CoverChange) async {
+        guard let before = song(id: id) else { return }
+
+        var coverFile = before.customArtworkFile
+        switch cover {
+        case .keep:
+            break
+        case .remove:
+            coverFile = nil
+        case .replace(let jpeg):
+            // 每次用新文件名，界面就知道封面换了
+            let name = "\(id.uuidString)-\(Int(Date().timeIntervalSince1970 * 1000)).jpg"
+            if await Self.writeCover(jpeg, name: name) {
+                coverFile = name
+            } else {
+                showToast("封面没存进去，再试一次吧")
+            }
+        }
+
+        // 上面等待写文件的时候列表可能变了，重新找一次
+        guard let i = songs.firstIndex(where: { $0.id == id }) else { return }
+        var edited = songs[i]
+        edited.customTitle = Self.override(title, original: edited.title)
+        edited.customArtist = Self.override(artist, original: edited.artist)
+        edited.customAlbum = Self.override(album, original: edited.album)
+        if let old = edited.customArtworkFile, old != coverFile {
+            Self.deleteCover(old)
+        }
+        edited.customArtworkFile = coverFile
+        songs[i] = edited
+        save()
+
+        ArtworkCache.shared.forget([id])
+        onSongEdited?(id)
+        showToast("改好啦 ✨")
+    }
+
+    /// 去掉首尾空格；留空或者和原来一样 → nil（不算修改）
+    private static func override(_ text: String, original: String) -> String? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty || t == original { return nil }
+        return t
+    }
+
+    nonisolated private static func writeCover(_ data: Data, name: String) async -> Bool {
+        do {
+            try data.write(to: Storage.coverURL(name), options: .atomic)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    nonisolated private static func deleteCover(_ name: String) {
+        try? FileManager.default.removeItem(at: Storage.coverURL(name))
     }
 
     // MARK: - 小提示

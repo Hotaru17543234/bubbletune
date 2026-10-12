@@ -3,7 +3,10 @@ import SwiftUI
 /// 点底部小播放条后弹出的完整播放页
 struct NowPlayingView: View {
     @EnvironmentObject private var player: Player
+    @EnvironmentObject private var library: Library
     var openShowerMode: () -> Void
+
+    @State private var editingSong: Song?
 
     var body: some View {
         ZStack {
@@ -19,7 +22,7 @@ struct NowPlayingView: View {
                         .shadow(color: Theme.blue.opacity(0.25), radius: 24, y: 12)
 
                     VStack(spacing: 6) {
-                        Text(player.currentSong?.title ?? "还没有选歌")
+                        Text(player.currentSong?.displayTitle ?? "还没有选歌")
                             .font(.title2.weight(.bold))
                             .foregroundStyle(Theme.ink)
                             .multilineTextAlignment(.center)
@@ -59,6 +62,29 @@ struct NowPlayingView: View {
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
             }
+        }
+        .overlay(alignment: .topTrailing) {
+            if let song = player.currentSong {
+                Button {
+                    editingSong = song
+                } label: {
+                    Label("编辑", systemImage: "pencil")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Theme.card, in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.9), lineWidth: 1))
+                        .foregroundStyle(Theme.deepBlue)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 18)
+                .padding(.trailing, 18)
+                .accessibilityLabel("编辑歌曲信息")
+            }
+        }
+        .sheet(item: $editingSong) { song in
+            SongEditorView(song: song)
+                .environmentObject(library)
         }
         .fontDesign(.rounded)
     }

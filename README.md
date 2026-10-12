@@ -16,6 +16,9 @@
   - 「文件」App →「我的 iPhone」→「泡泡音」文件夹，直接放歌进去
   - 电脑：Windows 用「Apple 设备」App（或 iTunes）的「文件」，Mac 用访达
 - 锁屏、控制中心、耳机都能控制播放；来电自动暂停，挂断接着放；拔耳机自动暂停
+- **编辑歌曲信息**：列表里长按或往右滑一首歌，或者在播放页点「编辑」
+  - 可以改歌名、歌手、专辑名，从相册选封面（自动取中间的正方形）
+  - 只改泡泡音里的显示，不动音乐文件本身；随时可以「全部恢复原样」
 
 支持 mp3 · m4a · aac · flac · wav · aiff（iPhone 自带解码器能放的格式）。
 Apple Music 订阅下载的歌有版权保护，自己做的 app 放不了。
@@ -42,5 +45,6 @@ Apple Music 订阅下载的歌有版权保护，自己做的 app 放不了。
 - `App/Library.swift`：歌曲列表、导入、扫描文件夹、删除排序
 - `App/ShowerModeView.swift`：洗澡模式
 - `App/HoldButton.swift`：按住才生效的大按钮、滑动退出
+- `App/SongEditorView.swift`、`App/CoverImage.swift`：编辑歌曲信息、把照片裁成正方形封面
 - `App/RootView.swift`、`NowPlayingView.swift`、`SettingsView.swift`：其他界面
 - `Tests/`：PlayQueue 的 Python 一比一版本和测试（`cd Tests && python3 test_queue.py`）

@@ -128,7 +128,7 @@ struct ShowerModeView: View {
                 .shadow(color: .black.opacity(0.4), radius: 16, y: 8)
 
             VStack(spacing: 4) {
-                Text(player.currentSong?.title ?? "还没有选歌")
+                Text(player.currentSong?.displayTitle ?? "还没有选歌")
                     .font(.system(size: m.titleFont, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)

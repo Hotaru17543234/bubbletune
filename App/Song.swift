@@ -15,12 +15,36 @@ struct Song: Identifiable, Codable, Hashable {
     var addedAt: Date
     var metadataLoaded: Bool
 
+    // 你在泡泡音里改过的信息（nil = 没改过，用上面从文件里读出来的）
+    // 都是可选的，旧版本存下来的歌曲列表也能直接读
+    var customTitle: String?
+    var customArtist: String?
+    var customAlbum: String?
+    /// 自定义封面的文件名，放在 Application Support/Covers 里
+    var customArtworkFile: String?
+
     var url: URL {
         Storage.documents.appendingPathComponent(fileName)
     }
 
+    /// 界面上显示的歌名 / 歌手 / 专辑：改过的优先
+    var displayTitle: String { customTitle ?? title }
+
+    var artistText: String { customArtist ?? artist }
+
     var displayArtist: String {
-        artist.isEmpty ? "未知歌手" : artist
+        artistText.isEmpty ? "未知歌手" : artistText
+    }
+
+    var displayAlbum: String { customAlbum ?? album }
+
+    var isEdited: Bool {
+        customTitle != nil || customArtist != nil || customAlbum != nil || customArtworkFile != nil
+    }
+
+    /// 封面换了，这个值就会变，界面靠它知道要重新读封面
+    var artworkKey: String {
+        id.uuidString + "|" + (customArtworkFile ?? "embedded")
     }
 
     /// 没有歌曲信息时，从文件名猜：「周杰伦 - 晴天.mp3」→ 歌手 周杰伦，歌名 晴天
@@ -52,6 +76,17 @@ enum Storage {
 
     static var libraryFile: URL {
         support.appendingPathComponent("library.json")
+    }
+
+    /// 自定义封面放这里（不放进文稿文件夹，免得「文件」App 里的歌曲文件夹变乱）
+    static let covers: URL = {
+        let url = support.appendingPathComponent("Covers", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }()
+
+    static func coverURL(_ fileName: String) -> URL {
+        covers.appendingPathComponent(fileName)
     }
 
     /// iPhone 自带解码器能放的格式

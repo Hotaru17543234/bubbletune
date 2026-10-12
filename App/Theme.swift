@@ -123,7 +123,7 @@ struct ArtworkView: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .task(id: song?.id) {
+        .task(id: song?.artworkKey) {
             image = nil
             if let song {
                 image = await ArtworkCache.shared.image(for: song)

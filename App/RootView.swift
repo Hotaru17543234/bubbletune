@@ -11,14 +11,14 @@ struct RootView: View {
     @State private var showShower = false
     @State private var showSettings = false
     @State private var showerAfterSheet = false
+    @State private var editingSong: Song?
 
     private var filteredSongs: [Song] {
         let q = search.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return library.songs }
-        return library.songs.filter {
-            $0.title.localizedCaseInsensitiveContains(q)
-                || $0.artist.localizedCaseInsensitiveContains(q)
-                || $0.album.localizedCaseInsensitiveContains(q)
+        return library.songs.filter { song in
+            [song.displayTitle, song.artistText, song.displayAlbum, song.title, song.artist, song.fileName]
+                .contains { $0.localizedCaseInsensitiveContains(q) }
         }
     }
 
@@ -101,6 +101,10 @@ struct RootView: View {
             .environmentObject(library)
             .presentationDragIndicator(.visible)
         }
+        .sheet(item: $editingSong) { song in
+            SongEditorView(song: song)
+                .environmentObject(library)
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(library)
@@ -149,6 +153,26 @@ struct RootView: View {
                             library.delete(ids: [song.id])
                         } label: {
                             Label("删除", systemImage: "trash")
+                        }
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            editingSong = song
+                        } label: {
+                            Label("编辑", systemImage: "pencil")
+                        }
+                        .tint(Theme.blue)
+                    }
+                    .contextMenu {
+                        Button {
+                            editingSong = song
+                        } label: {
+                            Label("编辑歌曲信息", systemImage: "pencil")
+                        }
+                        Button(role: .destructive) {
+                            library.delete(ids: [song.id])
+                        } label: {
+                            Label("删除这首歌", systemImage: "trash")
                         }
                     }
                 }
@@ -270,7 +294,7 @@ struct SongRow: View {
         HStack(spacing: 12) {
             ArtworkView(song: song, size: 46, cornerRadius: 10)
             VStack(alignment: .leading, spacing: 3) {
-                Text(song.title)
+                Text(song.displayTitle)
                     .font(.body.weight(isCurrent ? .bold : .medium))
                     .foregroundStyle(isCurrent ? Theme.blue : Theme.ink)
                     .lineLimit(1)
@@ -309,7 +333,7 @@ struct BottomPanel: View {
                     HStack(spacing: 12) {
                         ArtworkView(song: player.currentSong, size: 44, cornerRadius: 10)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(player.currentSong?.title ?? "还没有在放歌")
+                            Text(player.currentSong?.displayTitle ?? "还没有在放歌")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(Theme.ink)
                                 .lineLimit(1)
