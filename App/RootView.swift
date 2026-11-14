@@ -123,6 +123,7 @@ struct RootView: View {
             SettingsView()
                 .environmentObject(library)
                 .environmentObject(telegram)
+                .environmentObject(player)
         }
         .fullScreenCover(isPresented: $showShower) {
             ShowerModeView()

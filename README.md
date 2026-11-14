@@ -22,6 +22,11 @@
   - 以前手动导入过的同名同大小的歌会自动认出来，不重复下载
   - 频道里删掉的消息，泡泡音里也跟着删；你在泡泡音里删掉的，不会再同步回来（设置里可以恢复）
   - 需要先在 my.telegram.org 申请自己的 api_id / api_hash
+- **音量统一**：每首歌自动调成差不多一样响（设置里可以关掉，或者选「大声一点」）
+  - 导入、同步进来的歌，会在后台按 EBU R128 标准测一遍响度（LUFS），**只读不改**音乐文件
+  - 播放时太响的调小、太小声的调大，最多调大 12 dB；调大时有苹果自带的防破音（峰值限制器）
+  - 以前就有的歌，更新后打开泡泡音会自动补测；正在放的那首优先测
+  - 编辑歌曲信息的页面最下面能看到这首歌测出来多响、播放时调了多少
 - **编辑歌曲信息**：列表里长按或往右滑一首歌，或者在播放页点「编辑」
   - 可以改歌名、歌手、专辑名，从相册选封面（自动取中间的正方形）
   - 只改泡泡音里的显示，不动音乐文件本身；随时可以「全部恢复原样」
@@ -47,7 +52,9 @@ Apple Music 订阅下载的歌有版权保护，自己做的 app 放不了。
 ## 代码结构
 
 - `App/PlayQueue.swift`：「下一首放谁」的纯逻辑（顺序/倒序/随机 × 循环方式）
-- `App/Player.swift`：真正放声音、后台播放、锁屏控制、来电打断
+- `App/Player.swift`：播放控制、后台播放、锁屏控制、来电打断
+- `App/AudioTracks.swift`：真正出声的地方。AVAudioEngine 播放链（调音量 → 防破音），打不开时退回系统播放器
+- `App/Loudness.swift`：响度测量（ITU-R BS.1770 / EBU R128）和「该调几 dB」
 - `App/Library.swift`：歌曲列表、导入、扫描文件夹、删除排序
 - `App/ShowerModeView.swift`：洗澡模式
 - `App/HoldButton.swift`：按住才生效的大按钮、滑动退出
@@ -55,3 +62,5 @@ Apple Music 订阅下载的歌有版权保护，自己做的 app 放不了。
 - `App/SongEditorView.swift`、`App/CoverImage.swift`：编辑歌曲信息、把照片裁成正方形封面
 - `App/RootView.swift`、`NowPlayingView.swift`、`SettingsView.swift`：其他界面
 - `Tests/`：PlayQueue 的 Python 一比一版本和测试（`cd Tests && python3 test_queue.py`）
+- `Tests/loudness_model.py`、`test_loudness.py`：响度算法的 Python 一比一版本，用 EBU Tech 3341 测试题和 ffmpeg 对答案
+- `Tests/LoudnessCheck/`：在云端 Mac 上直接跑 app 里的 Swift 响度代码和播放链（`.github/workflows/verify.yml`，结果在 `verify-report` 分支）

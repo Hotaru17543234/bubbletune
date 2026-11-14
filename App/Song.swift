@@ -27,6 +27,17 @@ struct Song: Identifiable, Codable, Hashable {
     var tgChatID: Int64?
     var tgMessageID: Int64?
 
+    // 音量统一：整首歌测出来的响度（LUFS）和最响的采样点（dBFS），播放时据此调音量。
+    // 只是记下来的数字，音乐文件本身一点都不改
+    var loudness: Double?
+    var peakDB: Double?
+    /// 用第几版算法测的。nil 或者比现在旧 = 还没测
+    var loudnessVersion: Int?
+
+    var needsLoudness: Bool {
+        (loudnessVersion ?? 0) < Loudness.version
+    }
+
     var telegramKey: String? {
         guard let tgChatID, let tgMessageID else { return nil }
         return "\(tgChatID):\(tgMessageID)"

@@ -14,6 +14,10 @@ final class Library: ObservableObject {
     }
     @Published private(set) var toast: String?
     @Published private(set) var isImporting = false
+    /// 正在后台给歌测音量
+    @Published private(set) var loudnessBusy = false
+    /// 这次打开 app 后测不了的歌（文件坏了、还没拷完……）。下次打开再试
+    @Published private(set) var loudnessFailed: Set<UUID> = []
 
     /// 歌曲增减或顺序改变时通知播放器
     var onSongsChanged: (@MainActor ([UUID]) -> Void)?
@@ -22,8 +26,12 @@ final class Library: ObservableObject {
     /// 你自己删掉了歌（在泡泡音里删，或者在「文件」App 里删掉文件）。
     /// Telegram 同步用它记住「这首别再同步回来」
     var onSongsDeleted: (@MainActor ([Song]) -> Void)?
+    /// 某首歌的音量测好了（正在放的话，播放器会慢慢调到合适的音量）
+    var onLoudnessMeasured: (@MainActor (UUID) -> Void)?
 
     private var loadingIDs: Set<UUID> = []
+    /// 想先测的歌（比如正在放的那首）
+    private var loudnessPriority: [UUID] = []
     private var toastTask: Task<Void, Never>?
 
     init() {
@@ -90,6 +98,7 @@ final class Library: ObservableObject {
             save()
         }
         loadMissingMetadata()
+        measureLoudnessIfNeeded()
         return newOnes.count
     }
 
@@ -279,6 +288,7 @@ final class Library: ObservableObject {
         }
         save()
         loadMissingMetadata()
+        measureLoudnessIfNeeded()
     }
 
     /// 找一首「以前手动导入、还没和 Telegram 关联」的同名同大小的歌
@@ -374,6 +384,92 @@ final class Library: ObservableObject {
 
     nonisolated private static func deleteCover(_ name: String) {
         try? FileManager.default.removeItem(at: Storage.coverURL(name))
+    }
+
+    // MARK: - 音量统一：在后台一首一首测响度（只读文件，不改文件）
+
+    /// 有还没测过的歌就开始测。一次只测一首，不会让手机发烫
+    func measureLoudnessIfNeeded() {
+        guard !loudnessBusy, nextSongToMeasure(peekOnly: true) != nil else { return }
+        loudnessBusy = true
+        showLoudnessIntroOnce()
+        Task {
+            var unsaved = 0
+            while let song = self.nextSongToMeasure(peekOnly: false) {
+                let id = song.id
+                let url = song.url
+                let result = await Task.detached(priority: .utility) {
+                    try? LoudnessAnalyzer.analyze(url: url)
+                }.value
+                if self.applyLoudness(result, to: id) {
+                    unsaved += 1
+                    if unsaved >= 5 {
+                        self.save()
+                        unsaved = 0
+                    }
+                }
+            }
+            if unsaved > 0 { self.save() }
+            self.loudnessBusy = false
+        }
+    }
+
+    /// 这首歌请先测（正在放的歌还没测过时用）
+    func prioritizeLoudness(_ id: UUID) {
+        guard let s = song(id: id), s.needsLoudness, !loudnessFailed.contains(id) else { return }
+        loudnessPriority.removeAll { $0 == id }
+        loudnessPriority.insert(id, at: 0)
+        measureLoudnessIfNeeded()
+    }
+
+    /// 设置页上显示的进度
+    var loudnessProgressText: String {
+        let total = songs.count
+        guard total > 0 else { return "还没有歌" }
+        let done = songs.filter { !$0.needsLoudness }.count
+        let failed = songs.filter { loudnessFailed.contains($0.id) }.count
+        if done == total { return "全部 \(total) 首都测好啦" }
+        var text = "\(done) / \(total) 首"
+        if loudnessBusy { text += "，正在测…" }
+        if failed > 0 { text += "（\(failed) 首读不了）" }
+        return text
+    }
+
+    private func nextSongToMeasure(peekOnly: Bool) -> Song? {
+        while let first = loudnessPriority.first {
+            if let s = song(id: first), s.needsLoudness, !loudnessFailed.contains(first) {
+                if !peekOnly { loudnessPriority.removeFirst() }
+                return s
+            }
+            loudnessPriority.removeFirst()
+        }
+        return songs.first { $0.needsLoudness && !loudnessFailed.contains($0.id) }
+    }
+
+    /// 返回 true = 有新结果要存
+    private func applyLoudness(_ result: LoudnessResult?, to id: UUID) -> Bool {
+        guard let i = songs.firstIndex(where: { $0.id == id }) else { return false }
+        guard let result else {
+            loudnessFailed.insert(id)
+            return false
+        }
+        var measured = songs[i]
+        measured.loudness = result.integrated
+        measured.peakDB = result.peakDB
+        measured.loudnessVersion = Loudness.version
+        songs[i] = measured
+        onLoudnessMeasured?(id)
+        return true
+    }
+
+    /// 第一次开始测的时候说一声，不然会不知道发生了什么
+    private func showLoudnessIntroOnce() {
+        let key = "loudnessIntroShown"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        let count = songs.filter(\.needsLoudness).count
+        guard count >= 3 else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        showToast("正在给 \(count) 首歌测音量，测好的会自动调成一样响 🎚️")
     }
 
     // MARK: - 小提示

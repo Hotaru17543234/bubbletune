@@ -3,15 +3,20 @@ import SwiftUI
 enum SettingsKeys {
     static let holdSeconds = "showerHoldSeconds"
     static let showerAutoplay = "showerAutoplay"
+    static let loudnessNormalize = "loudnessNormalize"
+    static let loudnessTarget = "loudnessTarget"
 }
 
 struct SettingsView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var telegram: TelegramSync
+    @EnvironmentObject private var player: Player
     @Environment(\.dismiss) private var dismiss
 
     @AppStorage(SettingsKeys.holdSeconds) private var holdSeconds: Double = 0.3
     @AppStorage(SettingsKeys.showerAutoplay) private var autoplay = true
+    @AppStorage(SettingsKeys.loudnessNormalize) private var normalize = true
+    @AppStorage(SettingsKeys.loudnessTarget) private var loudnessTarget = Loudness.standardTarget
 
     var body: some View {
         NavigationStack {
@@ -37,6 +42,23 @@ struct SettingsView: View {
                 } footer: {
                     Text("登录你自己的 Telegram 账号，把一个频道里的音频（视频只要声音）自动同步进泡泡音。")
                 }
+
+                Section {
+                    Toggle("每首歌一样响", isOn: $normalize)
+                    if normalize {
+                        Picker("音量", selection: $loudnessTarget) {
+                            Text("标准").tag(Loudness.standardTarget)
+                            Text("大声一点（水声大时）").tag(Loudness.loudTarget)
+                        }
+                    }
+                    LabeledContent("测好的歌", value: library.loudnessProgressText)
+                } header: {
+                    Text("音量统一")
+                } footer: {
+                    Text("泡泡音会在后台把每首歌「听」一遍，记下它有多响，音乐文件本身一点都不改。播放时太响的调小、太小声的调大，调大时自带防破音。新导入、新同步的歌也会自动测。")
+                }
+                .onChange(of: normalize) { player.refreshGain() }
+                .onChange(of: loudnessTarget) { player.refreshGain() }
 
                 Section {
                     Picker("按钮怎样才算按下", selection: $holdSeconds) {

@@ -1,0 +1,74 @@
+name: Verify loudness
+
+# 每次推送都在云端 Mac 上检查「音量统一」的代码：
+# Python 版算法测试 → 生成测试音频 → 编译并运行 Tests/LoudnessCheck（用的是 app 里真正的 Swift 代码）
+# 结果写到 verify-report 分支的 report.txt
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Python tests and fixtures
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install -q numpy scipy soundfile
+          cd Tests
+          set +e
+          /tmp/venv/bin/python test_loudness.py > ../python-tests.txt 2>&1
+          echo "exit $?" >> ../python-tests.txt
+          /tmp/venv/bin/python make_loudness_fixtures.py /tmp/fixtures > ../fixtures.txt 2>&1
+          echo "exit $?" >> ../fixtures.txt
+
+      - name: Swift check
+        run: |
+          set +e
+          xcrun swiftc -O -swift-version 5 \
+            App/Loudness.swift App/AudioTracks.swift Tests/LoudnessCheck/main.swift \
+            -o /tmp/loudness-check > swift-build.txt 2>&1
+          echo "exit $?" >> swift-build.txt
+          if [ -x /tmp/loudness-check ]; then
+            /tmp/loudness-check /tmp/fixtures > swift-check.txt 2>&1
+            echo "exit $?" >> swift-check.txt
+          else
+            echo "not built" > swift-check.txt
+            echo "exit 1" >> swift-check.txt
+          fi
+
+      - name: Write report
+        if: always()
+        run: |
+          {
+            echo "run: ${{ github.run_number }}  ref: ${{ github.ref_name }}  commit: ${{ github.sha }}"
+            sw_vers 2>/dev/null
+            xcrun swiftc --version 2>&1 | head -2
+            for f in python-tests.txt fixtures.txt swift-build.txt swift-check.txt; do
+              echo "==== $f ===="
+              cat "$f" 2>/dev/null
+            done
+          } > /tmp/report.txt
+          rm -rf /tmp/rep && mkdir /tmp/rep && cd /tmp/rep
+          git init -q
+          git checkout -q -b verify-report
+          cp /tmp/report.txt report.txt
+          git add report.txt
+          git -c user.name="build-bot" -c user.email="build-bot@users.noreply.github.com" commit -qm "verify ${{ github.run_number }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" verify-report
+
+      - name: Fail if anything failed
+        run: |
+          for f in python-tests.txt fixtures.txt swift-build.txt swift-check.txt; do
+            tail -1 "$f" | grep -q "^exit 0$" || { echo "$f failed"; exit 1; }
+          done

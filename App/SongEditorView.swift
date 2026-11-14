@@ -25,6 +25,25 @@ struct SongEditorView: View {
         _album = State(initialValue: song.displayAlbum)
     }
 
+    /// 这首歌测出来多响、播放时调了多少
+    private var loudnessText: String {
+        let latest = library.song(id: song.id) ?? song
+        if latest.needsLoudness {
+            return library.loudnessFailed.contains(song.id) ? "读不了，下次打开再试" : "还在排队测…"
+        }
+        guard let lufs = latest.loudness else { return "几乎没声音，不调" }
+        let gain = Player.playbackGain(for: latest)
+        let change: String
+        if abs(gain) < 0.05 {
+            change = "不用调"
+        } else if gain > 0 {
+            change = String(format: "调大 %.1f dB", gain)
+        } else {
+            change = String(format: "调小 %.1f dB", -gain)
+        }
+        return String(format: "%.1f LUFS · ", lufs) + change
+    }
+
     /// 选了「用回自带封面」时，预览要显示的样子
     private var songWithoutCustomCover: Song {
         var s = song
@@ -55,6 +74,8 @@ struct SongEditorView: View {
                 }
                 Section {
                     LabeledContent("音乐文件", value: (song.fileName as NSString).lastPathComponent)
+                        .font(.footnote)
+                    LabeledContent("音量", value: loudnessText)
                         .font(.footnote)
                 }
             }

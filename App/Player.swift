@@ -13,7 +13,7 @@ final class Player: NSObject, ObservableObject {
 
     private let library: Library
     private var queue = PlayQueue(mode: .sequential)
-    private var audio: AVAudioPlayer?
+    private var audio: AudioTrack?
     private var nowPlayingArtwork: MPMediaItemArtwork?
     private var wasPlayingBeforeInterruption = false
     private var brokenInARow = 0
@@ -63,6 +63,9 @@ final class Player: NSObject, ObservableObject {
         }
         library.onSongEdited = { [weak self] id in
             self?.songEdited(id)
+        }
+        library.onLoudnessMeasured = { [weak self] id in
+            self?.loudnessMeasured(id)
         }
 
         // 每 5 秒记一下放到哪了，app 被系统关掉也不怕
@@ -134,9 +137,32 @@ final class Player: NSObject, ObservableObject {
 
     func seek(to time: TimeInterval) {
         guard let audio else { return }
-        audio.currentTime = max(0, min(time, audio.duration))
+        audio.seek(to: max(0, min(time, audio.duration)))
         updateNowPlaying()
         saveState()
+    }
+
+    // MARK: - 音量统一
+
+    /// 这首歌播放时要调大 / 调小几 dB（看设置里的开关和目标音量）
+    static func playbackGain(for song: Song) -> Double {
+        let defaults = UserDefaults.standard
+        let enabled = defaults.object(forKey: SettingsKeys.loudnessNormalize) as? Bool ?? true
+        guard enabled else { return 0 }
+        let target = defaults.object(forKey: SettingsKeys.loudnessTarget) as? Double ?? Loudness.standardTarget
+        return Loudness.gainDB(loudness: song.loudness, peakDB: song.peakDB, target: target)
+    }
+
+    /// 设置里改了开关或目标音量：正在放的歌马上（半秒内慢慢）调过去
+    func refreshGain() {
+        guard let song = currentSong else { return }
+        audio?.setGain(Self.playbackGain(for: song), animated: true)
+    }
+
+    /// 正在放的歌刚测好音量：慢慢调到合适的大小
+    private func loudnessMeasured(_ id: UUID) {
+        guard id == currentID else { return }
+        refreshGain()
     }
 
     // MARK: - 播放方式
@@ -190,13 +216,24 @@ final class Player: NSObject, ObservableObject {
         }
 
         do {
-            let player = try AVAudioPlayer(contentsOf: song.url)
-            player.delegate = self
-            player.prepareToPlay()
-            if startTime > 0 && startTime < player.duration - 1 {
-                player.currentTime = startTime
+            let track = try AudioTracks.open(url: song.url, gainDB: Self.playbackGain(for: song))
+            track.onFinish = { [weak self, weak track] in
+                guard let self, let track, let current = self.audio, current === track else { return }
+                self.songFinished()
             }
-            audio = player
+            track.onUnexpectedStop = { [weak self, weak track] in
+                guard let self, let track, let current = self.audio, current === track else { return }
+                self.isPlaying = false
+                self.updateNowPlaying()
+                self.saveState()
+            }
+            if startTime > 0 && startTime < track.duration - 1 {
+                track.seek(to: startTime)
+            }
+            audio = track
+            if song.needsLoudness {
+                library.prioritizeLoudness(id)
+            }
         } catch {
             isPlaying = false
             updateNowPlaying()
@@ -306,6 +343,7 @@ final class Player: NSObject, ObservableObject {
     private func handleInterruption(began: Bool, shouldResume: Bool) {
         if began {
             wasPlayingBeforeInterruption = isPlaying
+            audio?.pause()
             isPlaying = false
             updateNowPlaying()
             saveState()
@@ -387,23 +425,5 @@ final class Player: NSObject, ObservableObject {
     /// 在非主线程上下文里创建，系统会在后台线程调用这个闭包
     nonisolated private static func makeArtwork(_ image: UIImage) -> MPMediaItemArtwork {
         MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-    }
-}
-
-extension Player: AVAudioPlayerDelegate {
-    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        let finished = ObjectIdentifier(player)
-        Task { @MainActor in
-            guard let current = self.audio, ObjectIdentifier(current) == finished else { return }
-            self.songFinished()
-        }
-    }
-
-    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
-        let broken = ObjectIdentifier(player)
-        Task { @MainActor in
-            guard let current = self.audio, ObjectIdentifier(current) == broken else { return }
-            self.songFinished()
-        }
     }
 }
