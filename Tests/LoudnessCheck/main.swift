@@ -62,16 +62,17 @@ func makeM4A(from source: URL, to dest: URL) throws {
 }
 
 /// 用和 app 里一模一样的播放链离线渲染，返回渲染结果的响度和峰值
-func renderThroughChain(_ url: URL, gainDB: Double) throws -> LoudnessResult {
+func renderThroughChain(_ url: URL, gainDB: Double, bypassLimiter: Bool = false) throws -> LoudnessResult {
     let file = try AVAudioFile(forReading: url)
     let rate = file.processingFormat.sampleRate
     let stereo = PlaybackChain.stereoFormat(sampleRate: rate)!
     let engine = AVAudioEngine()
     try engine.enableManualRenderingMode(.offline, format: stereo, maximumFrameCount: 4096)
-    let chain = PlaybackChain()
+    let chain = PlaybackChain(fileChannels: file.processingFormat.channelCount)
     chain.attach(to: engine)
     chain.connect(in: engine, fileFormat: file.processingFormat, stereo: stereo)
     chain.setGain(gainDB)
+    chain.limiter.bypass = bypassLimiter
     chain.player.scheduleFile(file, at: nil)
     try engine.start()
     chain.player.play()
@@ -180,8 +181,20 @@ func runAll() throws {
         let wanted = (e.lufs ?? 0) + gain
         check("峰值很高的歌调大 \(String(format: "%+.1f", gain)) dB：不破音", (out.peakDB ?? 99) <= 0.1,
               "peak \(fmt(e.peakDB)) → \(fmt(out.peakDB)) dBFS")
-        check("……响度也差不多到位", close(out.integrated, wanted, 0.5),
+        // 防破音会把最响的地方压下去，整体响度会比算出来的低一点点，1 dB 以内算正常
+        check("……响度也差不多到位", close(out.integrated, wanted, 1.0),
               "want \(fmt(wanted)) out \(fmt(out.integrated))")
+        let raw = try renderThroughChain(dir.appendingPathComponent("quiet_highpeak.wav"), gainDB: gain, bypassLimiter: true)
+        print("  （参考）不开防破音：\(fmt(raw.integrated)) LUFS, peak \(fmt(raw.peakDB))")
+    }
+    if let e = expected["quiet_lowpeak.wav"] {
+        let gain = Loudness.gainDB(loudness: e.lufs, peakDB: e.peakDB, target: target)
+        let raw = try renderThroughChain(dir.appendingPathComponent("quiet_lowpeak.wav"), gainDB: gain, bypassLimiter: true)
+        print("  （参考）quiet_lowpeak 不开防破音：\(fmt(raw.integrated)) LUFS, peak \(fmt(raw.peakDB))")
+    }
+    let probe = PlaybackChain(fileChannels: 2)
+    for p in probe.limiter.auAudioUnit.parameterTree?.allParameters ?? [] {
+        print("  防破音参数 \(p.identifier) = \(p.value) \(p.unitName ?? "") [\(p.minValue) … \(p.maxValue)]")
     }
 
     realtimeSmokeTest(dir.appendingPathComponent("mix_44100_2ch.wav"))

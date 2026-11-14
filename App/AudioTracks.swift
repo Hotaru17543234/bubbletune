@@ -52,6 +52,14 @@ struct PlaybackChain {
         componentFlags: 0,
         componentFlagsMask: 0))
 
+    /// 单声道的歌升成立体声时，混音器会把左右各降 3 dB（等功率），这里补回来，
+    /// 让它和测响度时的假设一样：左右两边都是原来的音量
+    let compensationDB: Double
+
+    init(fileChannels: AVAudioChannelCount) {
+        compensationDB = fileChannels == 1 ? 20 * log10(2.0.squareRoot()) : 0
+    }
+
     /// 立体声、和歌曲一样的采样率：调音量和防破音都在这个格式上做
     static func stereoFormat(sampleRate: Double) -> AVAudioFormat? {
         AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)
@@ -72,9 +80,13 @@ struct PlaybackChain {
         engine.connect(limiter, to: engine.mainMixerNode, format: stereo)
     }
 
-    /// EQ 的整体增益范围是 -96 ～ +24 dB
+    /// 要调 db 时，EQ 上实际设的值（EQ 的整体增益范围是 -96 ～ +24 dB）
+    func gainValue(_ db: Double) -> Float {
+        Float(max(-60, min(24, db + compensationDB)))
+    }
+
     func setGain(_ db: Double) {
-        gain.globalGain = Float(max(-60, min(24, db)))
+        gain.globalGain = gainValue(db)
     }
 }
 
@@ -88,7 +100,7 @@ final class EngineTrack: AudioTrack {
     var onUnexpectedStop: (() -> Void)?
 
     private let engine = AVAudioEngine()
-    private let chain = PlaybackChain()
+    private let chain: PlaybackChain
     private let file: AVAudioFile
     private let fileFormat: AVAudioFormat
     private let stereo: AVAudioFormat
@@ -119,6 +131,7 @@ final class EngineTrack: AudioTrack {
         self.sampleRate = format.sampleRate
         self.totalFrames = file.length
         self.duration = Double(file.length) / format.sampleRate
+        self.chain = PlaybackChain(fileChannels: format.channelCount)
 
         chain.attach(to: engine)
         chain.connect(in: engine, fileFormat: format, stereo: stereo)
@@ -205,10 +218,10 @@ final class EngineTrack: AudioTrack {
 
     func setGain(_ db: Double, animated: Bool) {
         rampTask?.cancel()
-        let target = Float(max(-60, min(24, db)))
+        let target = chain.gainValue(db)
         let start = chain.gain.globalGain
         guard animated, abs(target - start) > 0.1 else {
-            chain.setGain(Double(target))
+            chain.gain.globalGain = target
             return
         }
         rampTask = Task { [weak self] in
