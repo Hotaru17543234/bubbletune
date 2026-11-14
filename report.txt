@@ -1,0 +1,194 @@
+run: 7  ref: main  commit: 3a29b6de961de0607cc4855b7645831283f8a2d0
+ProductName:		macOS
+ProductVersion:		26.7.2
+BuildVersion:		25G332
+swift-driver version: 1.148.6 Apple Swift version 6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)
+Target: arm64-apple-macosx26.0
+==== python-tests.txt ====
+EBU Tech 3341
+  ok   44100 Hz case 1: 1kHz -23 dBFS 20s  got -22.991 want -23.0
+  ok   44100 Hz case 2: 1kHz -33 dBFS 20s  got -32.991 want -33.0
+  ok   44100 Hz case 3: -36/-23/-36  got -23.011 want -23.0
+  ok   44100 Hz case 4: -72/-36/-23/-36/-72  got -23.011 want -23.0
+  ok   48000 Hz case 1: 1kHz -23 dBFS 20s  got -22.993 want -23.0
+  ok   48000 Hz case 2: 1kHz -33 dBFS 20s  got -32.993 want -33.0
+  ok   48000 Hz case 3: -36/-23/-36  got -23.014 want -23.0
+  ok   48000 Hz case 4: -72/-36/-23/-36/-72  got -23.014 want -23.0
+单声道 = 两边一样的立体声
+  ok   mono == stereo copy  -20.6791 vs -20.6791
+没声音 / 太短
+  ok   all zeros -> None
+  ok   0.3 s -> None (不到一个 400ms 块)
+  ok   -80 dBFS -> None (低于 -70 门限)
+峰值
+  ok   peak 0.9  -0.9151
+和 ffmpeg ebur128 对比
+  ok   44100 Hz 2ch  ours -13.71 ffmpeg -13.7
+  ok   48000 Hz 2ch  ours -13.53 ffmpeg -13.5
+  ok   22050 Hz 2ch  ours -13.19 ffmpeg -13.2
+  ok   44100 Hz 1ch  ours -12.25 ffmpeg -12.3
+  ok   96000 Hz 2ch  ours -13.87 ffmpeg -13.9
+  ok   32000 Hz 1ch  ours -12.71 ffmpeg -12.7
+播放时的增益
+  ok   响的歌调小
+  ok   小声的歌、峰值够低：整个调大
+  ok   小声的歌、峰值很高：最多让防破音压 4 dB
+  ok   调大最多 12 dB
+  ok   调小最多 20 dB
+  ok   没测出来 -> 0
+  ok   峰值超过 0 dBFS 时不靠余量
+两档之间差多少（典型的 Telegram 音乐视频）
+  ok   -8.0 LUFS / peak -0.1: 大声一点 比 标准 响 ≥ 1.9 dB  标准 -6.0 dB → -14.0, 大声 -2.0 dB → -10.0
+  ok   -10.0 LUFS / peak -0.5: 大声一点 比 标准 响 ≥ 1.9 dB  标准 -4.0 dB → -14.0, 大声 +0.0 dB → -10.0
+  ok   -12.0 LUFS / peak -1.0: 大声一点 比 标准 响 ≥ 1.9 dB  标准 -2.0 dB → -14.0, 大声 +2.0 dB → -10.0
+  ok   -16.0 LUFS / peak -1.0: 大声一点 比 标准 响 ≥ 1.9 dB  标准 +2.0 dB → -14.0, 大声 +6.0 dB → -10.0
+  ok   -20.0 LUFS / peak -1.0: 大声一点 比 标准 响 ≥ 1.9 dB  标准 +5.0 dB → -15.0, 大声 +7.0 dB → -13.0
+  ok   -20.0 LUFS / peak -8.0: 大声一点 比 标准 响 ≥ 1.9 dB  标准 +6.0 dB → -14.0, 大声 +10.0 dB → -10.0
+
+all passed ✨
+exit 0
+==== fixtures.txt ====
+mix_44100_2ch.wav         44100 Hz 2ch  -13.30 LUFS  peak -3.00 dBFS
+mix_48000_2ch.wav         48000 Hz 2ch  -13.41 LUFS  peak -3.00 dBFS
+mix_22050_2ch.wav         22050 Hz 2ch  -12.98 LUFS  peak -3.00 dBFS
+mix_44100_1ch.wav         44100 Hz 1ch  -12.40 LUFS  peak -3.00 dBFS
+mix_96000_2ch.wav         96000 Hz 2ch  -13.72 LUFS  peak -3.00 dBFS
+mix_32000_1ch.wav         32000 Hz 1ch  -12.59 LUFS  peak -3.00 dBFS
+ebu_case1.wav             44100 Hz 2ch  -22.99 LUFS  peak -23.00 dBFS
+quiet_lowpeak.wav         44100 Hz 2ch  -25.47 LUFS  peak -16.00 dBFS
+quiet_highpeak.wav        44100 Hz 2ch  -22.35 LUFS  peak -1.01 dBFS
+loud.wav                  44100 Hz 2ch  -3.18 LUFS  peak -0.10 dBFS
+mono_quiet.wav            44100 Hz 1ch  -19.11 LUFS  peak -10.00 dBFS
+exit 0
+==== problems.txt ====
+aac_named.mp3                 -13.9  其实是 AAC（ADTS），却叫 .mp3
+adts.aac                      -13.9  裸 AAC（.aac）
+adts_named.m4a                -13.9  其实是裸 AAC（ADTS），却叫 .m4a（Telegram 上 mime 是 audio/aac 时会这样）
+alac.m4a                      -13.8  ALAC 无损 m4a
+bigcover.mp3                  -14.1  带很大封面的 mp3（ID3 标签好几 MB）
+cbr.mp3                       -14.1  普通 mp3（CBR 192k）
+cover.flac                    -13.8  带封面的 flac
+junk_tail.mp3                 -14.1  mp3 后面多了 300KB 乱码
+lowrate.m4a                   -14.5  低码率 AAC（48k、22kHz）
+mono22k.mp3                   -11.6  单声道 22kHz mp3
+mp3_named.m4a                 -14.1  其实是 mp3，却叫 .m4a
+ogg_named.mp3                 -13.8  其实是 Ogg Opus，却叫 .mp3（iPhone 放不了，只要不闪退就行）
+opus.m4a                      -13.8  m4a 里装的是 Opus（YouTube 下载器偶尔会这样）
+s24.wav                       -13.8  24 位 wav
+truncated.mp3                 -14.0  mp3 只下载了 60%
+truncated_faststart.m4a       -13.8  m4a（目录在前面）只下载了 60%
+truncated_moovlast.m4a         None  m4a（目录在最后）只下载了 90%：目录没了，哪里都放不了
+vbr_noxing.mp3                -14.0  VBR mp3、没有 Xing 头、开头很安静（时长会被估错）
+video.mp4                     -14.0  带画面的 mp4 视频（H.264 + AAC）
+exit 0
+==== swift-build.txt ====
+exit 0
+==== swift-check.txt ====
+1. 分析器（Swift）和 Python 版对答案
+  ok   ebu_case1.wav  swift -22.991 / python -22.991 LUFS, peak -23.000 / -23.000, 40 ms
+  ok   loud.wav  swift -3.181 / python -3.181 LUFS, peak -0.103 / -0.103, 19 ms
+  ok   mix_22050_2ch.wav  swift -12.980 / python -12.980 LUFS, peak -3.000 / -3.000, 12 ms
+  ok   mix_32000_1ch.wav  swift -12.590 / python -12.590 LUFS, peak -3.000 / -3.000, 12 ms
+  ok   mix_44100_1ch.wav  swift -12.403 / python -12.403 LUFS, peak -3.000 / -3.000, 17 ms
+  ok   mix_44100_2ch.wav  swift -13.302 / python -13.302 LUFS, peak -3.000 / -3.000, 21 ms
+  ok   mix_48000_2ch.wav  swift -13.412 / python -13.412 LUFS, peak -3.000 / -3.000, 29 ms
+  ok   mix_96000_2ch.wav  swift -13.720 / python -13.720 LUFS, peak -3.000 / -3.000, 48 ms
+  ok   mono_quiet.wav  swift -19.110 / python -19.110 LUFS, peak -10.000 / -10.000, 12 ms
+  ok   quiet_highpeak.wav  swift -22.348 / python -22.348 LUFS, peak -1.012 / -1.012, 19 ms
+  ok   quiet_lowpeak.wav  swift -25.465 / python -25.465 LUFS, peak -16.000 / -16.000, 15 ms
+  ok   EBU 3341 第 1 题 = -23.0  -22.991
+2. AAC（m4a）文件
+  ok   ebu_case1.m4a  m4a -22.991 / wav -22.991
+  ok   mix_44100_2ch.m4a  m4a -13.320 / wav -13.302
+  ok   mono_quiet.m4a  m4a -19.117 / wav -19.110
+3. 播放链离线渲染（目标 -14 LUFS）
+  ok   不调音量时原样输出  in -13.302 out -13.302, peak -3.000
+  ok   quiet_lowpeak.wav 调 +11.5 dB 后 ≈ -14  in -25.465 out -14.139, peak -4.535
+  ok   loud.wav 调 -10.8 dB 后 ≈ -14  in -3.181 out -14.000, peak -10.922
+  ok   mono_quiet.wav 调 +5.1 dB 后 ≈ -14  in -19.110 out -14.000, peak -4.890
+  ok   峰值很高的歌调大 +5.0 dB：不破音  peak -1.012 → -0.323 dBFS
+  ok   ……响度也差不多到位  want -17.336 out -18.020
+  （参考）不开防破音：-17.336 LUFS, peak 4.000
+  （参考）quiet_lowpeak 不开防破音：-14.139 LUFS, peak -4.535
+  ok   「大声一点」比「标准」响 4 dB 左右  标准 -14.000 / 大声 -10.001，差 3.999 dB，大声的峰值 -0.030
+  防破音参数 0 = 0.002 Secs [0.0005 … 0.03]
+  防破音参数 1 = 0.005 Secs [0.001 … 0.04]
+  防破音参数 2 = 0.0 dB [-40.0 … 40.0]
+4. 各种「不太标准」的文件
+  · aac_named.mp3：其实是 AAC（ADTS），却叫 .mp3
+      AVAudioFile 打不开，AVAudioPlayer 打不开，泡泡音播放用 EngineTrack
+  ok   aac_named.mp3 测出来了  AVAudioFile：-13.892 / ffmpeg -13.900
+  · adts.aac：裸 AAC（.aac）
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   adts.aac 测出来了  AVAudioFile：-13.892 / ffmpeg -13.900
+  · adts_named.m4a：其实是裸 AAC（ADTS），却叫 .m4a（Telegram 上 mime 是 audio/aac 时会这样）
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   adts_named.m4a 测出来了  AVAudioFile：-13.892 / ffmpeg -13.900
+  · alac.m4a：ALAC 无损 m4a
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   alac.m4a 测出来了  AVAudioFile：-13.756 / ffmpeg -13.800
+  · bigcover.mp3：带很大封面的 mp3（ID3 标签好几 MB）
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   bigcover.mp3 测出来了  AVAudioFile：-14.125 / ffmpeg -14.100
+  · cbr.mp3：普通 mp3（CBR 192k）
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   cbr.mp3 测出来了  AVAudioFile：-14.125 / ffmpeg -14.100
+  · cover.flac：带封面的 flac
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   cover.flac 测出来了  AVAudioFile：-13.756 / ffmpeg -13.800
+  · junk_tail.mp3：mp3 后面多了 300KB 乱码
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   junk_tail.mp3 测出来了  AVAudioFile：-14.125 / ffmpeg -14.100
+  · lowrate.m4a：低码率 AAC（48k、22kHz）
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   lowrate.m4a 测出来了  AVAudioFile：-14.539 / ffmpeg -14.500
+  · mono22k.mp3：单声道 22kHz mp3
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   mono22k.mp3 测出来了  AVAudioFile：-11.545 / ffmpeg -11.600
+  · mp3_named.m4a：其实是 mp3，却叫 .m4a
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   mp3_named.m4a 测出来了  AVAudioFile：-14.125 / ffmpeg -14.100
+  · ogg_named.mp3：其实是 Ogg Opus，却叫 .mp3（iPhone 放不了，只要不闪退就行）
+      AVAudioFile 打不开，AVAudioPlayer 打不开，泡泡音播放用 SimpleTrack
+  ok   ogg_named.mp3 测出来了  AVAssetReader：-13.785 / ffmpeg -13.800
+  · opus.m4a：m4a 里装的是 Opus（YouTube 下载器偶尔会这样）
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 SimpleTrack
+  ok   opus.m4a 测出来了  AVAssetReader：-13.785 / ffmpeg -13.800
+  · s24.wav：24 位 wav
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   s24.wav 测出来了  AVAudioFile：-13.756 / ffmpeg -13.800
+  · truncated.mp3：mp3 只下载了 60%
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   truncated.mp3 测出来了  AVAudioFile(后面坏了，只用前面)：-13.970 / ffmpeg -14.000
+  · truncated_faststart.m4a：m4a（目录在前面）只下载了 60%
+      AVAudioFile 打不开，AVAudioPlayer 打不开，泡泡音播放用 放不了
+      （本来就放不了）读不了：方法一：com.apple.coreaudio.avfaudio 2003334207 'wht?'；方法二：AVFoundationErrorDomain -11880
+  · truncated_moovlast.m4a：m4a（目录在最后）只下载了 90%：目录没了，哪里都放不了
+      AVAudioFile 打不开，AVAudioPlayer 打不开，泡泡音播放用 放不了
+      （本来就放不了）读不了：方法一：com.apple.coreaudio.avfaudio 1685348671 'dta?'；方法二：AVFoundationErrorDomain -11829
+  · vbr_noxing.mp3：VBR mp3、没有 Xing 头、开头很安静（时长会被估错）
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   vbr_noxing.mp3 测出来了  AVAudioFile：-13.889 / ffmpeg -14.000
+  · video.mp4：带画面的 mp4 视频（H.264 + AAC）
+      AVAudioFile 能开，AVAudioPlayer 能开，泡泡音播放用 EngineTrack
+  ok   video.mp4 测出来了  AVAudioFile：-13.995 / ffmpeg -14.000
+5. 实际播放 EngineTrack（需要声卡）
+  ok   时长  20.000
+  ok   放了 1 秒左右  1.024
+  ok   暂停后进度不动  1.024 → 1.024
+  ok   接着放  1.568
+  ok   跳到 10 秒  10.000
+  ok   放完会通知一次  finished = 1
+  ok   放完不再算在播放
+6. 文件后面坏了 / 时长估错时能不能放完
+  ok   vbr_noxing.mp3 能放完（EngineTrack）  时长 40.0 秒，3.2 秒后收到放完
+  ok   junk_tail.mp3 能放完（EngineTrack）  时长 40.0 秒，3.1 秒后收到放完
+  ok   truncated.mp3 能放完（EngineTrack）  时长 40.0 秒，0.7 秒后收到放完
+  truncated_faststart.m4a：打不开（Error Domain=NSOSStatusErrorDomain Code=2003334207 "(null)"），跳过
+  ok   aac_named.mp3 能放完（EngineTrack）  时长 40.0 秒，3.1 秒后收到放完
+  ok   adts_named.m4a 能放完（EngineTrack）  时长 40.0 秒，3.2 秒后收到放完
+  opus.m4a：系统播放器读不出时长（app 里会改用导入时读到的时长），跳过
+  ok   cbr.mp3 能放完（EngineTrack）  时长 40.0 秒，3.1 秒后收到放完
+
+all passed ✨
+exit 0
