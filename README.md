@@ -26,7 +26,10 @@
   - 导入、同步进来的歌，会在后台按 EBU R128 标准测一遍响度（LUFS），**只读不改**音乐文件
   - 播放时太响的调小、太小声的调大，最多调大 12 dB；调大时有苹果自带的防破音（峰值限制器）
   - 以前就有的歌，更新后打开泡泡音会自动补测；正在放的那首优先测
+  - 设置里能实时看到正在放的这首原本多响、现在调了多少；「大声一点」比「标准」响 4 dB 左右
   - 编辑歌曲信息的页面最下面能看到这首歌测出来多响、播放时调了多少
+  - 测不了的歌会列在设置里（文件名 + 原因），可以「再测一次」
+  - 扩展名不对的文件（比如其实是 AAC 却叫 .mp3）会按真实格式打开，测得了也放得了
 - **编辑歌曲信息**：列表里长按或往右滑一首歌，或者在播放页点「编辑」
   - 可以改歌名、歌手、专辑名，从相册选封面（自动取中间的正方形）
   - 只改泡泡音里的显示，不动音乐文件本身；随时可以「全部恢复原样」
@@ -54,7 +57,8 @@ Apple Music 订阅下载的歌有版权保护，自己做的 app 放不了。
 - `App/PlayQueue.swift`：「下一首放谁」的纯逻辑（顺序/倒序/随机 × 循环方式）
 - `App/Player.swift`：播放控制、后台播放、锁屏控制、来电打断
 - `App/AudioTracks.swift`：真正出声的地方。AVAudioEngine 播放链（调音量 → 防破音），打不开时退回系统播放器
-- `App/Loudness.swift`：响度测量（ITU-R BS.1770 / EBU R128）和「该调几 dB」
+- `App/Loudness.swift`：响度测量（ITU-R BS.1770 / EBU R128）和「该调几 dB」；读不了时换 AVAssetReader
+- `App/AudioFileSupport.swift`：看文件头认真实格式（扩展名不对时用临时链接打开）；只让 AVAudioFile 碰靠得住的编码，防闪退
 - `App/Library.swift`：歌曲列表、导入、扫描文件夹、删除排序
 - `App/ShowerModeView.swift`：洗澡模式
 - `App/HoldButton.swift`：按住才生效的大按钮、滑动退出
@@ -63,4 +67,5 @@ Apple Music 订阅下载的歌有版权保护，自己做的 app 放不了。
 - `App/RootView.swift`、`NowPlayingView.swift`、`SettingsView.swift`：其他界面
 - `Tests/`：PlayQueue 的 Python 一比一版本和测试（`cd Tests && python3 test_queue.py`）
 - `Tests/loudness_model.py`、`test_loudness.py`：响度算法的 Python 一比一版本，用 EBU Tech 3341 测试题和 ffmpeg 对答案
+- `Tests/make_problem_files.py`：用 ffmpeg 做各种不标准的文件（VBR mp3、乱码结尾、只下了一半、扩展名不对、m4a 里装 Opus……）
 - `Tests/LoudnessCheck/`：在云端 Mac 上直接跑 app 里的 Swift 响度代码和播放链（`.github/workflows/verify.yml`，结果在 `verify-report` 分支）

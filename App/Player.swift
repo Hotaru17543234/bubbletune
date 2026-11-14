@@ -30,7 +30,8 @@ final class Player: NSObject, ObservableObject {
     var currentTime: TimeInterval { audio?.currentTime ?? 0 }
 
     var duration: TimeInterval {
-        if let audio { return audio.duration }
+        // 有的文件（比如 m4a 里装的是 Opus）系统播放器读不出时长，就用导入时读到的
+        if let audio, audio.duration > 0 { return audio.duration }
         return currentSong?.duration ?? 0
     }
 

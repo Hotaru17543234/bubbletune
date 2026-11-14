@@ -152,6 +152,11 @@ func earlyEndTest(_ name: String) async {
         print("  \(name)：打不开（\(error)），跳过")
         return
     }
+    guard track.duration > 0 else {
+        print("  \(name)：系统播放器读不出时长（app 里会改用导入时读到的时长），跳过")
+        track.stop()
+        return
+    }
     var finished = 0
     track.onFinish = { finished += 1 }
     track.seek(to: max(0, track.duration - 3))
