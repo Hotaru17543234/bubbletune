@@ -60,6 +60,13 @@ def main(out):
     make("aac_named.mp3", "其实是 AAC（ADTS），却叫 .mp3",
          "-i", "base.wav", "-c:a", "aac", "-b:a", "160k", "-f", "adts", "aac_named.mp3")
     make("adts.aac", "裸 AAC（.aac）", "-i", "base.wav", "-c:a", "aac", "-b:a", "160k", "adts.aac")
+    make("adts_named.m4a", "其实是裸 AAC（ADTS），却叫 .m4a（Telegram 上 mime 是 audio/aac 时会这样）",
+         "-i", "base.wav", "-c:a", "aac", "-b:a", "160k", "-f", "adts", "adts_named.m4a")
+    try:
+        make("ogg_named.mp3", "其实是 Ogg Opus，却叫 .mp3（iPhone 放不了，只要不闪退就行）",
+             "-i", "base.wav", "-c:a", "libopus", "-b:a", "128k", "-f", "ogg", "ogg_named.mp3")
+    except subprocess.CalledProcessError:
+        print("（这台 ffmpeg 做不了 ogg，跳过）")
     make("mp3_named.m4a", "其实是 mp3，却叫 .m4a",
          "-i", "base.wav", "-c:a", "libmp3lame", "-b:a", "192k", "-f", "mp3", "mp3_named.m4a")
     make("video.mp4", "带画面的 mp4 视频（H.264 + AAC）",

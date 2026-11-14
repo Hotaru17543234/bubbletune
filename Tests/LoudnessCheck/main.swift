@@ -5,7 +5,7 @@
 //   4. 各种「不太标准」的文件（Tests/make_problem_files.py 用 ffmpeg 做的）：能不能测、用哪种方法测的
 //   5. 有声卡的话，再实际放一下：进度、跳转、放完通知；文件后面坏了 / 时长估错时能不能顺利放完
 //
-// 用法：swiftc -O App/Loudness.swift App/AudioTracks.swift Tests/LoudnessCheck/main.swift -o check
+// 用法：swiftc -O App/Loudness.swift App/AudioTracks.swift App/AudioFileSupport.swift Tests/LoudnessCheck/main.swift -o check
 //       ./check 测试音频文件夹 奇怪文件文件夹
 
 import Foundation
@@ -240,7 +240,8 @@ func runAll() async throws {
 
     if await realtimeSmokeTest(dir.appendingPathComponent("mix_44100_2ch.wav")) {
         print("6. 文件后面坏了 / 时长估错时能不能放完")
-        for name in ["vbr_noxing.mp3", "junk_tail.mp3", "truncated.mp3", "truncated_faststart.m4a", "cbr.mp3"] {
+        for name in ["vbr_noxing.mp3", "junk_tail.mp3", "truncated.mp3", "truncated_faststart.m4a",
+                     "aac_named.mp3", "adts_named.m4a", "opus.m4a", "cbr.mp3"] {
             await earlyEndTest(name)
         }
     }

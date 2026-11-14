@@ -241,7 +241,9 @@ enum LoudnessAnalyzer {
 
     /// 先用 AVAudioFile 读（快）；打不开、或者一开头就读不下去，
     /// 再用 AVAssetReader 读（和系统播视频用的是同一套解码，带画面的 mp4、奇怪的封装也能读）
-    static func measure(url: URL) async throws -> Measurement {
+    static func measure(url original: URL) async throws -> Measurement {
+        // 扩展名不对的文件（比如其实是 AAC 却叫 .mp3），换个对的名字再打开
+        let url = AudioFileSupport.openableURL(for: original)
         let firstError: Swift.Error
         do {
             return try measureWithAudioFile(url)
@@ -262,6 +264,8 @@ enum LoudnessAnalyzer {
 
     static func measureWithAudioFile(_ url: URL) throws -> Measurement {
         let file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
+        // 不常见的编码交给 AVAssetReader（AVAudioFile 碰它们可能直接闪退）
+        guard AudioFileSupport.isReliable(file) else { throw Failure.badFormat }
         let format = file.processingFormat
         let channels = Int(format.channelCount)
         guard channels > 0, format.sampleRate > 0 else { throw Failure.badFormat }
@@ -272,11 +276,12 @@ enum LoudnessAnalyzer {
             throw Failure.noBuffer
         }
         var partial = false
-        while file.framePosition < file.length {
+        let expected = file.length
+        while AVAudioFramePosition(meter.frames) < expected {
             do {
                 try file.read(into: buffer, frameCount: chunk)
             } catch {
-                guard enoughBeforeError(meter, expectedFrames: Double(file.length)) else { throw error }
+                guard enoughBeforeError(meter, expectedFrames: Double(expected)) else { throw error }
                 partial = true
                 break
             }

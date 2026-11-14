@@ -43,7 +43,7 @@ jobs:
         run: |
           set +e
           xcrun swiftc -O -swift-version 5 \
-            App/Loudness.swift App/AudioTracks.swift Tests/LoudnessCheck/main.swift \
+            App/Loudness.swift App/AudioTracks.swift App/AudioFileSupport.swift Tests/LoudnessCheck/main.swift \
             -o /tmp/loudness-check > swift-build.txt 2>&1
           echo "exit $?" >> swift-build.txt
           if [ -x /tmp/loudness-check ]; then

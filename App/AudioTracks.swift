@@ -22,12 +22,19 @@ protocol AudioTrack: AnyObject {
 
 @MainActor
 enum AudioTracks {
-    /// 优先用能调大音量的 EngineTrack；打不开时退回系统自带播放器（只能调小）
-    static func open(url: URL, gainDB: Double) throws -> AudioTrack {
+    /// 优先用能调大音量的 EngineTrack；打不开时退回系统自带播放器（只能调小）。
+    /// 扩展名不对的文件先换个对的名字（见 AudioFileSupport）
+    static func open(url original: URL, gainDB: Double) throws -> AudioTrack {
+        let url = AudioFileSupport.openableURL(for: original)
         if let track = try? EngineTrack(url: url, gainDB: gainDB) {
             return track
         }
-        return try SimpleTrack(url: url, gainDB: gainDB)
+        do {
+            return try SimpleTrack(url: url, gainDB: gainDB)
+        } catch {
+            guard url != original else { throw error }
+            return try SimpleTrack(url: original, gainDB: gainDB)
+        }
     }
 }
 
@@ -118,6 +125,8 @@ final class EngineTrack: AudioTrack {
 
     init(url: URL, gainDB: Double) throws {
         let file = try AVAudioFile(forReading: url)
+        // 不常见的编码（比如 Opus）交给系统播放器：AVAudioFile 碰它们可能直接闪退
+        guard AudioFileSupport.isReliable(file) else { throw LoudnessAnalyzer.Failure.badFormat }
         let format = file.processingFormat
         // 5.1 这类多声道交给系统播放器，免得声道对不上
         guard format.channelCount >= 1, format.channelCount <= 2,
