@@ -13,7 +13,7 @@ import tempfile
 
 import numpy as np
 
-from loudness_model import gain_db, measure
+from loudness_model import LOUD, STANDARD, gain_db, measure
 
 FAILS = []
 
@@ -148,6 +148,12 @@ def test_gain():
     check("调小最多 20 dB", abs(gain_db(10.0, 0.0, -14.0) - (-20.0)) < 1e-9)
     check("没测出来 -> 0", gain_db(None, None, -14.0) == 0.0)
     check("峰值超过 0 dBFS 时不靠余量", abs(gain_db(-20.0, 1.0, -14.0) - 4.0) < 1e-9)
+    print("两档之间差多少（典型的 Telegram 音乐视频）")
+    for lufs, peak in [(-8.0, -0.1), (-10.0, -0.5), (-12.0, -1.0), (-16.0, -1.0), (-20.0, -1.0), (-20.0, -8.0)]:
+        s = gain_db(lufs, peak, *STANDARD)
+        l = gain_db(lufs, peak, *LOUD)
+        check(f"{lufs} LUFS / peak {peak}: 大声一点 比 标准 响 ≥ 1.9 dB", l - s >= 1.9,
+              f"标准 {s:+.1f} dB → {lufs + s:.1f}, 大声 {l:+.1f} dB → {lufs + l:.1f}")
 
 
 if __name__ == "__main__":

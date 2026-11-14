@@ -16,8 +16,8 @@ final class Library: ObservableObject {
     @Published private(set) var isImporting = false
     /// 正在后台给歌测音量
     @Published private(set) var loudnessBusy = false
-    /// 这次打开 app 后测不了的歌（文件坏了、还没拷完……）。下次打开再试
-    @Published private(set) var loudnessFailed: Set<UUID> = []
+    /// 这次打开 app 后测不了的歌 → 原因（文件坏了、还没拷完……）。下次打开会再试
+    @Published private(set) var loudnessFailures: [UUID: String] = [:]
 
     /// 歌曲增减或顺序改变时通知播放器
     var onSongsChanged: (@MainActor ([UUID]) -> Void)?
@@ -398,10 +398,14 @@ final class Library: ObservableObject {
             while let song = self.nextSongToMeasure(peekOnly: false) {
                 let id = song.id
                 let url = song.url
-                let result = await Task.detached(priority: .utility) {
-                    try? LoudnessAnalyzer.analyze(url: url)
+                let outcome = await Task.detached(priority: .utility) { () -> MeasureOutcome in
+                    do {
+                        return .measured(try await LoudnessAnalyzer.analyze(url: url))
+                    } catch {
+                        return .failed(LoudnessAnalyzer.describe(error))
+                    }
                 }.value
-                if self.applyLoudness(result, to: id) {
+                if self.applyLoudness(outcome, to: id) {
                     unsaved += 1
                     if unsaved >= 5 {
                         self.save()
@@ -416,7 +420,7 @@ final class Library: ObservableObject {
 
     /// 这首歌请先测（正在放的歌还没测过时用）
     func prioritizeLoudness(_ id: UUID) {
-        guard let s = song(id: id), s.needsLoudness, !loudnessFailed.contains(id) else { return }
+        guard let s = song(id: id), s.needsLoudness, loudnessFailures[id] == nil else { return }
         loudnessPriority.removeAll { $0 == id }
         loudnessPriority.insert(id, at: 0)
         measureLoudnessIfNeeded()
@@ -427,7 +431,7 @@ final class Library: ObservableObject {
         let total = songs.count
         guard total > 0 else { return "还没有歌" }
         let done = songs.filter { !$0.needsLoudness }.count
-        let failed = songs.filter { loudnessFailed.contains($0.id) }.count
+        let failed = failedLoudnessSongs.count
         if done == total { return "全部 \(total) 首都测好啦" }
         var text = "\(done) / \(total) 首"
         if loudnessBusy { text += "，正在测…" }
@@ -437,20 +441,51 @@ final class Library: ObservableObject {
 
     private func nextSongToMeasure(peekOnly: Bool) -> Song? {
         while let first = loudnessPriority.first {
-            if let s = song(id: first), s.needsLoudness, !loudnessFailed.contains(first) {
+            if let s = song(id: first), s.needsLoudness, loudnessFailures[first] == nil {
                 if !peekOnly { loudnessPriority.removeFirst() }
                 return s
             }
             loudnessPriority.removeFirst()
         }
-        return songs.first { $0.needsLoudness && !loudnessFailed.contains($0.id) }
+        return songs.first { $0.needsLoudness && loudnessFailures[$0.id] == nil }
+    }
+
+    struct FailedSong: Identifiable {
+        let song: Song
+        let reason: String
+        var id: UUID { song.id }
+    }
+
+    /// 测不了的歌（按列表顺序）和原因
+    var failedLoudnessSongs: [FailedSong] {
+        songs.compactMap { song in
+            guard song.needsLoudness, let reason = loudnessFailures[song.id] else { return nil }
+            return FailedSong(song: song, reason: reason)
+        }
+    }
+
+    /// 「再测一次」：清掉失败记录，从头再试
+    func retryFailedLoudness() {
+        guard !loudnessFailures.isEmpty else { return }
+        loudnessFailures = [:]
+        measureLoudnessIfNeeded()
+    }
+
+    enum MeasureOutcome: Sendable {
+        case measured(LoudnessResult)
+        case failed(String)
     }
 
     /// 返回 true = 有新结果要存
-    private func applyLoudness(_ result: LoudnessResult?, to id: UUID) -> Bool {
+    private func applyLoudness(_ outcome: MeasureOutcome, to id: UUID) -> Bool {
         guard let i = songs.firstIndex(where: { $0.id == id }) else { return false }
-        guard let result else {
-            loudnessFailed.insert(id)
+        let result: LoudnessResult
+        switch outcome {
+        case .measured(let r):
+            result = r
+            if loudnessFailures[id] != nil { loudnessFailures[id] = nil }
+        case .failed(let reason):
+            loudnessFailures[id] = reason
             return false
         }
         var measured = songs[i]

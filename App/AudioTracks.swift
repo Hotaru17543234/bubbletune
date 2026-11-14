@@ -254,7 +254,24 @@ final class EngineTrack: AudioTrack {
     private func segmentEnded(_ gen: Int, force: Bool) {
         guard gen == generation, isPlaying else { return }
         let position = force ? duration : max(livePosition(), wallClockPosition())
-        guard position >= duration - 0.75 else { return }   // 没放到结尾，是被打断的，交给别的地方处理
+        if position >= duration - 0.75 {
+            finishNow()
+            return
+        }
+        // 还没到结尾就没了：
+        // - 引擎停了 → 是插拔耳机、来电之类，交给别的地方接着放
+        // - 引擎还在转 → 文件后面读不出来了（或者 mp3 的时长是估出来的、比实际长），
+        //   等一小会儿确认不是上面那种情况，就当成放完，接着放下一首，免得一直没声音
+        guard engine.isRunning else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, gen == self.generation, self.isPlaying, self.engine.isRunning else { return }
+                self.finishNow()
+            }
+        }
+    }
+
+    private func finishNow() {
         generation += 1
         isPlaying = false
         baseTime = duration

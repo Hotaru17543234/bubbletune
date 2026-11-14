@@ -11,18 +11,16 @@ enum Loudness {
     /// 算法改了就加 1，旧的结果会自动重新测一遍
     static let version = 1
 
-    /// 「标准」目标：和 Spotify、YouTube 一样
-    static let standardTarget = -14.0
-    /// 「大声一点」：适合洗澡时有水声
-    static let loudTarget = -11.0
-
     static let maxBoost = 12.0
     static let maxCut = 20.0
-    /// 调大时，最响的那一下最多让防破音压低几 dB（压太多会听出声音被「挤扁」）
-    static let limiterAllowance = 4.0
 
     /// 播放时要调大（正数）或调小（负数）几 dB。没测出来就不动
-    static func gainDB(loudness: Double?, peakDB: Double?, target: Double) -> Double {
+    static func gainDB(loudness: Double?, peakDB: Double?, mode: LoudnessMode) -> Double {
+        gainDB(loudness: loudness, peakDB: peakDB, target: mode.target, limiterAllowance: mode.limiterAllowance)
+    }
+
+    /// limiterAllowance：调大时，最响的那一下最多让防破音压低几 dB（压太多会听出声音被「挤扁」）
+    static func gainDB(loudness: Double?, peakDB: Double?, target: Double, limiterAllowance: Double) -> Double {
         guard let loudness, loudness.isFinite else { return 0 }
         var g = target - loudness
         if g > 0 {
@@ -30,6 +28,34 @@ enum Loudness {
             g = min(g, max(0, headroom) + limiterAllowance)
         }
         return max(-maxCut, min(maxBoost, g))
+    }
+
+    /// 「调大 3.2 dB」「调小 4.0 dB」「不用调」
+    static func describeGain(_ g: Double) -> String {
+        if abs(g) < 0.05 { return "不用调" }
+        return g > 0 ? String(format: "调大 %.1f dB", g) : String(format: "调小 %.1f dB", -g)
+    }
+}
+
+/// 设置里的两档音量
+enum LoudnessMode: String, CaseIterable, Sendable {
+    /// 和 Spotify、YouTube 一样
+    case standard
+    /// 比标准响 4 dB，水声大的时候用；为了响，允许防破音多压一点
+    case loud
+
+    var target: Double {
+        switch self {
+        case .standard: return -14
+        case .loud: return -10
+        }
+    }
+
+    var limiterAllowance: Double {
+        switch self {
+        case .standard: return 4
+        case .loud: return 6
+        }
     }
 }
 
@@ -58,6 +84,10 @@ struct LoudnessMeter {
     private var subCount = 0
     private var subBlocks: [Double] = []
     private var peak: Float = 0
+    /// 一共喂进来多少帧
+    private(set) var frames = 0
+
+    var seconds: Double { Double(frames) / sampleRate }
 
     init(sampleRate: Double, channels: Int) {
         self.sampleRate = sampleRate
@@ -149,6 +179,7 @@ struct LoudnessMeter {
         self.subSum = subSum
         self.subCount = subCount
         self.peak = peak
+        self.frames += frames
     }
 
     /// 最后结果。不满 100 毫秒的尾巴不算（和 libebur128 一样）
@@ -180,10 +211,56 @@ enum LoudnessAnalyzer {
     enum Failure: Swift.Error {
         case badFormat
         case noBuffer
+        case noAudioTrack
+        case noAudio
+    }
+
+    /// 两种读法都失败时的错误，记着各自的原因，方便在设置里显示
+    struct BothFailed: Swift.Error {
+        let audioFile: Swift.Error
+        let assetReader: Swift.Error
+    }
+
+    /// 是用哪种方法测出来的（检查程序里看）
+    enum Method: String, Sendable {
+        case audioFile = "AVAudioFile"
+        case audioFilePartial = "AVAudioFile(后面坏了，只用前面)"
+        case assetReader = "AVAssetReader"
+        case assetReaderPartial = "AVAssetReader(后面坏了，只用前面)"
+    }
+
+    struct Measurement: Sendable {
+        var result: LoudnessResult
+        var method: Method
     }
 
     /// 读整首歌测响度。比较花时间（一首歌不到一秒），别在主线程上调
-    static func analyze(url: URL) throws -> LoudnessResult {
+    static func analyze(url: URL) async throws -> LoudnessResult {
+        try await measure(url: url).result
+    }
+
+    /// 先用 AVAudioFile 读（快）；打不开、或者一开头就读不下去，
+    /// 再用 AVAssetReader 读（和系统播视频用的是同一套解码，带画面的 mp4、奇怪的封装也能读）
+    static func measure(url: URL) async throws -> Measurement {
+        let firstError: Swift.Error
+        do {
+            return try measureWithAudioFile(url)
+        } catch {
+            firstError = error
+        }
+        do {
+            return try await measureWithAssetReader(url)
+        } catch {
+            throw BothFailed(audioFile: firstError, assetReader: error)
+        }
+    }
+
+    /// 文件只是后面一小段坏了：前面读到的够多（至少 5 秒，而且过了一半）就用前面的
+    private static func enoughBeforeError(_ meter: LoudnessMeter, expectedFrames: Double) -> Bool {
+        meter.seconds >= 5 && (expectedFrames <= 0 || Double(meter.frames) >= 0.5 * expectedFrames)
+    }
+
+    static func measureWithAudioFile(_ url: URL) throws -> Measurement {
         let file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
         let format = file.processingFormat
         let channels = Int(format.channelCount)
@@ -194,13 +271,132 @@ enum LoudnessAnalyzer {
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunk) else {
             throw Failure.noBuffer
         }
+        var partial = false
         while file.framePosition < file.length {
-            try file.read(into: buffer, frameCount: chunk)
+            do {
+                try file.read(into: buffer, frameCount: chunk)
+            } catch {
+                guard enoughBeforeError(meter, expectedFrames: Double(file.length)) else { throw error }
+                partial = true
+                break
+            }
             let n = Int(buffer.frameLength)
             if n == 0 { break }
             guard let data = buffer.floatChannelData else { throw Failure.noBuffer }
             meter.process(UnsafePointer(data), frames: n)
         }
-        return meter.result()
+        // 打开了却一帧都读不出来，当成失败，换另一种读法
+        guard meter.frames > 0 else { throw Failure.noAudio }
+        return Measurement(result: meter.result(), method: partial ? .audioFilePartial : .audioFile)
+    }
+
+    static func measureWithAssetReader(_ url: URL) async throws -> Measurement {
+        let asset = AVURLAsset(url: url)
+        guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
+            throw Failure.noAudioTrack
+        }
+        let expectedSeconds = (try? await asset.load(.duration))?.seconds ?? 0
+
+        let reader = try AVAssetReader(asset: asset)
+        // 解码成 32 位浮点、交错排列（左右左右……），采样率和声道数保持原样
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVLinearPCMBitDepthKey: 32,
+            AVLinearPCMIsFloatKey: true,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+        ])
+        output.alwaysCopiesSampleData = false
+        guard reader.canAdd(output) else { throw Failure.badFormat }
+        reader.add(output)
+        guard reader.startReading() else { throw reader.error ?? Failure.badFormat }
+
+        var meter: LoudnessMeter?
+        var channels = 0
+        var interleaved: [Float] = []
+        var planar: [UnsafeMutablePointer<Float>] = []
+        var capacity = 0
+        defer { planar.forEach { $0.deallocate() } }
+
+        while let sample = output.copyNextSampleBuffer() {
+            if meter == nil {
+                guard let desc = CMSampleBufferGetFormatDescription(sample),
+                      let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc)?.pointee,
+                      asbd.mChannelsPerFrame > 0, asbd.mSampleRate > 0 else { continue }
+                channels = Int(asbd.mChannelsPerFrame)
+                meter = LoudnessMeter(sampleRate: asbd.mSampleRate, channels: channels)
+            }
+            guard let block = CMSampleBufferGetDataBuffer(sample) else { continue }
+            let bytes = CMBlockBufferGetDataLength(block)
+            let count = bytes / MemoryLayout<Float>.size
+            let frames = count / channels
+            guard frames > 0 else { continue }
+            if interleaved.count < count {
+                interleaved = [Float](repeating: 0, count: count)
+            }
+            let status = interleaved.withUnsafeMutableBytes { raw in
+                CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: bytes, destination: raw.baseAddress!)
+            }
+            guard status == kCMBlockBufferNoErr else { continue }
+            // 拆成一个声道一条，交给响度计
+            if frames > capacity {
+                planar.forEach { $0.deallocate() }
+                planar = (0..<channels).map { _ in UnsafeMutablePointer<Float>.allocate(capacity: frames) }
+                capacity = frames
+            }
+            interleaved.withUnsafeBufferPointer { src in
+                for ch in 0..<channels {
+                    let dst = planar[ch]
+                    var j = ch
+                    for i in 0..<frames {
+                        dst[i] = src[j]
+                        j += channels
+                    }
+                }
+            }
+            planar.withUnsafeBufferPointer { ptrs in
+                meter!.process(ptrs.baseAddress!, frames: frames)
+            }
+        }
+
+        guard let meter, meter.frames > 0 else {
+            throw reader.error ?? Failure.noAudio
+        }
+        if reader.status == .failed {
+            let expectedFrames = expectedSeconds.isFinite ? expectedSeconds * meter.sampleRate : 0
+            guard enoughBeforeError(meter, expectedFrames: expectedFrames) else {
+                throw reader.error ?? Failure.noAudio
+            }
+            return Measurement(result: meter.result(), method: .assetReaderPartial)
+        }
+        return Measurement(result: meter.result(), method: .assetReader)
+    }
+
+    /// 给人看的失败原因（设置里「读不了的歌」那一页用）
+    static func describe(_ error: Swift.Error) -> String {
+        if let both = error as? BothFailed {
+            return "方法一：\(shortCode(both.audioFile))；方法二：\(shortCode(both.assetReader))"
+        }
+        return shortCode(error)
+    }
+
+    private static func shortCode(_ error: Swift.Error) -> String {
+        if let failure = error as? Failure {
+            switch failure {
+            case .badFormat: return "格式不对"
+            case .noBuffer: return "内存不够"
+            case .noAudioTrack: return "里面没有声音"
+            case .noAudio: return "一帧都读不出来"
+            }
+        }
+        let ns = error as NSError
+        var text = "\(ns.domain) \(ns.code)"
+        // Core Audio 的错误码常常是四个字母（比如 'typ?' = 不认识的文件类型）
+        let code = UInt32(truncatingIfNeeded: ns.code)
+        let bytes = [24, 16, 8, 0].map { UInt8((code >> UInt32($0)) & 0xFF) }
+        if bytes.allSatisfy({ $0 >= 32 && $0 < 127 }) {
+            text += " '" + String(decoding: bytes, as: UTF8.self) + "'"
+        }
+        return text
     }
 }

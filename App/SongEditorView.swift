@@ -29,19 +29,11 @@ struct SongEditorView: View {
     private var loudnessText: String {
         let latest = library.song(id: song.id) ?? song
         if latest.needsLoudness {
-            return library.loudnessFailed.contains(song.id) ? "读不了，下次打开再试" : "还在排队测…"
+            return library.loudnessFailures[song.id] != nil ? "读不了（设置 → 音量统一里能看原因）" : "还在排队测…"
         }
         guard let lufs = latest.loudness else { return "几乎没声音，不调" }
         let gain = Player.playbackGain(for: latest)
-        let change: String
-        if abs(gain) < 0.05 {
-            change = "不用调"
-        } else if gain > 0 {
-            change = String(format: "调大 %.1f dB", gain)
-        } else {
-            change = String(format: "调小 %.1f dB", -gain)
-        }
-        return String(format: "%.1f LUFS · ", lufs) + change
+        return String(format: "%.1f LUFS · ", lufs) + Loudness.describeGain(gain)
     }
 
     /// 选了「用回自带封面」时，预览要显示的样子

@@ -47,6 +47,7 @@ final class Player: NSObject, ObservableObject {
         repeatMode = RepeatMode(rawValue: defaults.string(forKey: Keys.repeatMode) ?? "") ?? .all
         queue = PlayQueue(mode: orderMode)
 
+        Self.migrateLoudnessSettings()
         configureAudioSession()
         setUpRemoteCommands()
         observeAudioSession()
@@ -144,13 +145,26 @@ final class Player: NSObject, ObservableObject {
 
     // MARK: - 音量统一
 
-    /// 这首歌播放时要调大 / 调小几 dB（看设置里的开关和目标音量）
+    /// 这首歌播放时要调大 / 调小几 dB（看设置里的开关和音量档位）
     static func playbackGain(for song: Song) -> Double {
         let defaults = UserDefaults.standard
         let enabled = defaults.object(forKey: SettingsKeys.loudnessNormalize) as? Bool ?? true
         guard enabled else { return 0 }
-        let target = defaults.object(forKey: SettingsKeys.loudnessTarget) as? Double ?? Loudness.standardTarget
-        return Loudness.gainDB(loudness: song.loudness, peakDB: song.peakDB, target: target)
+        let mode = LoudnessMode(rawValue: defaults.string(forKey: SettingsKeys.loudnessMode) ?? "") ?? .standard
+        return Loudness.gainDB(loudness: song.loudness, peakDB: song.peakDB, mode: mode)
+    }
+
+    /// 正在放的这首能不能调大（打不开时用的系统备用播放器只能调小）
+    var canBoost: Bool { audio is EngineTrack }
+
+    /// 第 5 版存的是目标数字（-14 / -11），换成「标准 / 大声一点」
+    private static func migrateLoudnessSettings() {
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: SettingsKeys.loudnessMode) == nil,
+              let oldTarget = defaults.object(forKey: "loudnessTarget") as? Double else { return }
+        let mode: LoudnessMode = oldTarget > -12.5 ? .loud : .standard
+        defaults.set(mode.rawValue, forKey: SettingsKeys.loudnessMode)
+        defaults.removeObject(forKey: "loudnessTarget")
     }
 
     /// 设置里改了开关或目标音量：正在放的歌马上（半秒内慢慢）调过去

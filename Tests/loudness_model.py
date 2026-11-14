@@ -106,18 +106,21 @@ def integrate(blocks):
     return lufs(sum(gated) / len(gated))
 
 
-# ---- 播放时调多少 dB（和 Swift 版 Loudness.gainDB 一样） ----
+# ---- 播放时调多少 dB（和 Swift 版 Loudness.gainDB / LoudnessMode 一样） ----
 
 MAX_BOOST = 12.0          # 最多调大 12 dB
 MAX_CUT = 20.0            # 最多调小 20 dB
-LIMITER_ALLOWANCE = 4.0   # 调大时，最响的地方最多让防破音压 4 dB
+
+# 两档：(目标响度, 调大时最响的地方最多让防破音压几 dB)
+STANDARD = (-14.0, 4.0)
+LOUD = (-10.0, 6.0)
 
 
-def gain_db(loudness, peak_db, target):
+def gain_db(loudness, peak_db, target, limiter_allowance=4.0):
     if loudness is None or not math.isfinite(loudness):
         return 0.0
     g = target - loudness
     if g > 0:
         headroom = -(peak_db if peak_db is not None else 0.0)
-        g = min(g, max(0.0, headroom) + LIMITER_ALLOWANCE)
+        g = min(g, max(0.0, headroom) + limiter_allowance)
     return max(-MAX_CUT, min(MAX_BOOST, g))

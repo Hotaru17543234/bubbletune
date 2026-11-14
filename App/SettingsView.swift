@@ -4,7 +4,7 @@ enum SettingsKeys {
     static let holdSeconds = "showerHoldSeconds"
     static let showerAutoplay = "showerAutoplay"
     static let loudnessNormalize = "loudnessNormalize"
-    static let loudnessTarget = "loudnessTarget"
+    static let loudnessMode = "loudnessMode"
 }
 
 struct SettingsView: View {
@@ -16,7 +16,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.holdSeconds) private var holdSeconds: Double = 0.3
     @AppStorage(SettingsKeys.showerAutoplay) private var autoplay = true
     @AppStorage(SettingsKeys.loudnessNormalize) private var normalize = true
-    @AppStorage(SettingsKeys.loudnessTarget) private var loudnessTarget = Loudness.standardTarget
+    @AppStorage(SettingsKeys.loudnessMode) private var loudnessMode = LoudnessMode.standard.rawValue
 
     var body: some View {
         NavigationStack {
@@ -46,19 +46,36 @@ struct SettingsView: View {
                 Section {
                     Toggle("每首歌一样响", isOn: $normalize)
                     if normalize {
-                        Picker("音量", selection: $loudnessTarget) {
-                            Text("标准").tag(Loudness.standardTarget)
-                            Text("大声一点（水声大时）").tag(Loudness.loudTarget)
+                        Picker("音量", selection: $loudnessMode) {
+                            Text("标准").tag(LoudnessMode.standard.rawValue)
+                            Text("大声一点（水声大时）").tag(LoudnessMode.loud.rawValue)
                         }
                     }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("正在放的这首")
+                            .foregroundStyle(Theme.ink)
+                        Text(nowPlayingLoudnessText)
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(Theme.blue)
+                            .animation(nil, value: nowPlayingLoudnessText)
+                    }
+                    .padding(.vertical, 2)
                     LabeledContent("测好的歌", value: library.loudnessProgressText)
+                    if !library.failedLoudnessSongs.isEmpty {
+                        NavigationLink {
+                            LoudnessFailuresView()
+                        } label: {
+                            Label("读不了的歌（\(library.failedLoudnessSongs.count) 首）", systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(Theme.ink)
+                        }
+                    }
                 } header: {
                     Text("音量统一")
                 } footer: {
-                    Text("泡泡音会在后台把每首歌「听」一遍，记下它有多响，音乐文件本身一点都不改。播放时太响的调小、太小声的调大，调大时自带防破音。新导入、新同步的歌也会自动测。")
+                    Text("泡泡音会在后台把每首歌「听」一遍，记下它有多响，音乐文件本身一点都不改。播放时太响的调小、太小声的调大，调大时自带防破音。「大声一点」比「标准」响 4 dB 左右。新导入、新同步的歌也会自动测。")
                 }
                 .onChange(of: normalize) { player.refreshGain() }
-                .onChange(of: loudnessTarget) { player.refreshGain() }
+                .onChange(of: loudnessMode) { player.refreshGain() }
 
                 Section {
                     Picker("按钮怎样才算按下", selection: $holdSeconds) {
@@ -110,6 +127,24 @@ struct SettingsView: View {
         .tint(Theme.blue)
     }
 
+    /// 正在放的歌：原本多响、现在调了多少。改开关和音量档位时会跟着变
+    private var nowPlayingLoudnessText: String {
+        guard let song = player.currentSong else { return "现在没在放歌" }
+        if song.needsLoudness {
+            return library.loudnessFailures[song.id] != nil ? "这首读不了，不调（原因在下面）" : "这首还在测，测好马上调"
+        }
+        guard let lufs = song.loudness else { return "这首几乎没声音，不调" }
+        let original = String(format: "原本 %.1f LUFS", lufs)
+        guard normalize else { return original + " · 统一关着，不调" }
+        let mode = LoudnessMode(rawValue: loudnessMode) ?? .standard
+        let gain = Loudness.gainDB(loudness: lufs, peakDB: song.peakDB, mode: mode)
+        var text = original + " → " + Loudness.describeGain(gain)
+        if gain > 0.05 && !player.canBoost {
+            text += "（这首只能调小）"
+        }
+        return text
+    }
+
     private var telegramSummary: String {
         switch telegram.loginStep {
         case .ready:
@@ -135,5 +170,43 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 2)
+    }
+}
+
+/// 测不了音量的歌：是哪几首、为什么。这几首照样能放，只是不会自动调音量
+struct LoudnessFailuresView: View {
+    @EnvironmentObject private var library: Library
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(library.failedLoudnessSongs) { item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.song.displayTitle)
+                            .foregroundStyle(Theme.ink)
+                        Text((item.song.fileName as NSString).lastPathComponent)
+                            .font(.caption)
+                            .foregroundStyle(Theme.ink.opacity(0.6))
+                        Text(item.reason)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(Theme.ink.opacity(0.45))
+                            .textSelection(.enabled)
+                    }
+                    .padding(.vertical, 2)
+                }
+            } footer: {
+                Text("这些歌照样能放，只是不会自动调音量。可以截图发给做 app 的人看看原因～")
+            }
+            Section {
+                Button {
+                    library.retryFailedLoudness()
+                } label: {
+                    Label(library.loudnessBusy ? "正在测…" : "再测一次", systemImage: "arrow.clockwise")
+                }
+                .disabled(library.loudnessBusy)
+            }
+        }
+        .navigationTitle("读不了的歌")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
